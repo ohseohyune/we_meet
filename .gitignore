@@ -1,0 +1,29 @@
+# Python cache / local environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# MuJoCo / rendering outputs
+outputs/
+inspection_frames/
+inspection_dataset*/
+*.zip
+*.npy
+*.png
+*.mp4
+*.avi
+*.mov
+*.csv
+
+# Keep source images/meshes in vendored model folders if already tracked later.
+!franka_sim-master/*.png
+
+# Local editor / OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
