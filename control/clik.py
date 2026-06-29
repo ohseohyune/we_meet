@@ -1,5 +1,5 @@
 """
-Body-Jacobian CLIK for the 7-DOF Franka Panda.
+Body-Jacobian CLIK for serial manipulators.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def clik_step(
     return_info: bool = False,
 ) -> np.ndarray | tuple[np.ndarray, dict]:
     """
-    One resolved-rate CLIK step with 7-DOF null-space projection.
+    One resolved-rate CLIK step with optional null-space projection.
 
         qdot = Jb^+ Kp eb + (I - Jb^+ Jb) qdot0
     """
@@ -120,7 +120,7 @@ def solve_ik(
     q_hi: np.ndarray | None = None,
     nullspace_gain: float = 0.08,
 ) -> tuple[np.ndarray, bool, dict]:
-    """Iterative Body-Jacobian IK with Franka-friendly redundancy handling."""
+    """Iterative Body-Jacobian IK with joint-limit-aware damping."""
     q = np.asarray(q_init, dtype=float).reshape(-1).copy()
     if q_lo is not None or q_hi is not None:
         lo = -np.inf if q_lo is None else np.asarray(q_lo, dtype=float)
@@ -171,4 +171,3 @@ def solve_ik(
 
     history["best_error_norm"] = best_err
     return best_q, False, history
-

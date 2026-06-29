@@ -18,17 +18,18 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from control.franka_ik_solver import joint_limits, joint_qpos_indices, set_arm_qpos, solve_trajectory
 from main import (
+    EE_LOOK_AXIS_COL,
     EE_LOOK_AXIS_SIGN,
-    FRANKA_READY,
+    ROBOT_READY,
     SCENE_XML,
 )
-from mujoco_viewer import camera_poses_to_tcp_poses, generate_segmented_reference
+from mujoco_viewer import CAMERA_SITE_NAME, camera_poses_to_tcp_poses, generate_segmented_reference
 
 
 def tcp_jacobian(model, data, q: np.ndarray) -> np.ndarray:
     qidx = joint_qpos_indices(model, mujoco)
     set_arm_qpos(model, data, mujoco, q)
-    sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "tcp")
+    sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, CAMERA_SITE_NAME)
     jacp = np.zeros((3, model.nv))
     jacr = np.zeros((3, model.nv))
     mujoco.mj_jacSite(model, data, jacp, jacr, sid)
@@ -82,11 +83,12 @@ def diagnose(max_waypoints: int, retries: int, output_csv: str) -> dict:
         mujoco,
         tcp_poses,
         look_target=look_targets,
-        q_start=FRANKA_READY,
+        q_start=ROBOT_READY,
         retries=retries,
         verbose=False,
-        axis_col=2,
+        axis_col=EE_LOOK_AXIS_COL,
         axis_sign=EE_LOOK_AXIS_SIGN,
+        site_name=CAMERA_SITE_NAME,
     )
 
     qdot = np.gradient(q_hist, time_values, axis=0)
@@ -107,9 +109,9 @@ def diagnose(max_waypoints: int, retries: int, output_csv: str) -> dict:
             **metrics,
             **limits_info,
         }
-        row.update({f"q{j+1}": float(q[j]) for j in range(7)})
-        row.update({f"qdot{j+1}": float(qd[j]) for j in range(7)})
-        row.update({f"dq_step{j+1}": float(dq[j]) for j in range(7)})
+        row.update({f"q{j+1}": float(q[j]) for j in range(q_hist.shape[1])})
+        row.update({f"qdot{j+1}": float(qd[j]) for j in range(q_hist.shape[1])})
+        row.update({f"dq_step{j+1}": float(dq[j]) for j in range(q_hist.shape[1])})
         rows.append(row)
 
     fieldnames = list(rows[0].keys())
@@ -144,8 +146,8 @@ def print_report(result: dict, top_k: int) -> None:
         print(f"\n[{title}]")
         ranked = sorted(rows, key=lambda r: r[key], reverse=reverse)[:top_k]
         for r in ranked:
-            q = [r[f"q{j+1}"] for j in range(7)]
-            qdot = [r[f"qdot{j+1}"] for j in range(7)]
+            q = [r[f"q{j+1}"] for j in range(6)]
+            qdot = [r[f"qdot{j+1}"] for j in range(6)]
             print(
                 f"idx={r['index']:3d} t={r['time']:7.3f} "
                 f"ok={r['ik_success']} dq={r['dq_step_norm']:.4f} "

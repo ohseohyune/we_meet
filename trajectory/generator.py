@@ -9,7 +9,7 @@ Coordinate Frames (all in robot base frame)
   Flange_face : same as Flange frame.
   Seam        : circular pipe/flange contact line at pipe OD radius.
   Camera      : optical center follows the larger inspection circle.
-  TCP         : located 100 mm behind camera along the same look-at axis in mujoco_viewer.py.
+  TCP         : coincident with the camera optical center in mujoco_viewer.py.
 
 Trajectory Assumptions
 -----------------------
@@ -19,32 +19,44 @@ Trajectory Assumptions
 - Seam target is the pipe/flange contact circle at pipe outer radius.
 - Trajectory is a larger circle in the y-z plane, offset toward the robot.
 - Camera always looks from trajectory point toward the current seam point.
-- mujoco_viewer.py converts camera waypoints to TCP waypoints using:
-  p_tcp = p_camera - 0.10 * z_camera.
+- mujoco_viewer.py converts camera waypoints to TCP waypoints with zero translational offset.
 - World +z used as up-hint for computing right-hand camera frame.
 - N waypoints evenly spaced from 0° to 360° (start==end for closed loop).
 - Smooth SLERP orientation interpolation provided as a utility.
 """
 
-import numpy as np
+import sys
+from pathlib import Path
 from typing import List, Tuple
+
+import numpy as np
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from trajectory.circle import (
+    BOTTOM_FORBIDDEN_HALF_ANGLE,
+    is_in_bottom_forbidden_sector,
+)
 
 
 # ── Scene configuration ──────────────────────────────────────────────────────
 # Robot workspace centroid is near (0, 0, -0.59) based on DH sampling.
 # The arm reaches ±0.8m in x/y and -1.1 to 0 in z.
 # Pipe/flange placed within robot workspace:
-#   - Pipe along world +x, starting at x=0.30, ending at x=0.55
-#   - Flange face at x=0.55, pipe axis height at z=0.57
+#   - Pipe along world +x, starting at x=0.42000, ending at x=0.67000
+#   - Flange face at x=0.67000, pipe axis height at z=0.5286
 # Inspection circle in y-z plane (perpendicular to pipe x-axis):
-#   - seam center at (0.55, 0, 0.57)
-#   - radius = 0.1652 m
-PIPE_OFFSET_X  = 0.30   # x-distance from robot base to pipe start (m)
+#   - seam center at (0.67000, 0, 0.5286)
+#   - radius = 0.120 m
+#   - lower support bar exclusion: 270° ± 30° by default
+PIPE_OFFSET_X  = 0.42000  # x-distance from robot base to pipe start (m)
 PIPE_LENGTH    = 0.25   # pipe length (m)
-PIPE_HEIGHT    = 0.57   # z-height of pipe center axis (m) in z-up world
+PIPE_HEIGHT    = 0.5286 # z-height of pipe center axis (m) in z-up world
 PIPE_OD        = 0.0605  # pipe outer diameter matches the flange bore (m)
-STANDOFF       = 0.1652173913  # camera orbit radius in the y-z plane (m)
-TRAJECTORY_X_OFFSET = -0.18  # move camera orbit toward robot along world -x (m)
+STANDOFF       = 0.120  # camera orbit radius in the y-z plane (m)
+TRAJECTORY_X_OFFSET = -0.1533  # move camera orbit toward robot along world -x (m)
 N_WAYPOINTS    = 36     # waypoints around 360° (every 10°)
 
 # Derived
@@ -59,26 +71,26 @@ SEAM_CENTER = FLANGE_CENTER.copy()
 def look_at_rotation(pos: np.ndarray, target: np.ndarray, up_hint: np.ndarray = None) -> np.ndarray:
     """
     Compute 3×3 rotation matrix such that:
-      +z axis points from `pos` toward `target`
-      +y axis is as close as possible to `up_hint` (default: world +z)
+      -z axis points from `pos` toward `target`
+      +x axis is as close as possible to `up_hint` (default: pipe/world +x)
       +x = +y × +z (right-hand)
 
-    This defines the camera frame: camera looks along its +z.
+    This defines the physical camera frame: the optical axis is camera -z.
     """
     if up_hint is None:
-        up_hint = np.array([0.0, 0.0, 1.0])
+        up_hint = np.array([1.0, 0.0, 0.0])
 
-    z_cam = target - pos
+    z_cam = pos - target
     norm = np.linalg.norm(z_cam)
     if norm < 1e-9:
         raise ValueError("Camera position coincides with target.")
     z_cam /= norm
 
-    # Degenerate: camera looking straight up/down
+    # Degenerate: camera optical axis nearly parallel to the preferred x axis.
     if abs(np.dot(z_cam, up_hint)) > 0.999:
-        up_hint = np.array([0.0, 1.0, 0.0])
+        up_hint = np.array([0.0, 0.0, 1.0])
 
-    x_cam = np.cross(up_hint, z_cam)
+    x_cam = up_hint - np.dot(up_hint, z_cam) * z_cam
     x_cam /= np.linalg.norm(x_cam)
     y_cam = np.cross(z_cam, x_cam)
 
@@ -106,7 +118,7 @@ def make_pose(pos: np.ndarray, R: np.ndarray) -> np.ndarray:
 #   where R = STANDOFF, and the circle is in the y-z plane.
 #
 # Camera orientation:
-#   Computed by look_at(p(φ), s(φ)), so +z always points at the
+#   Computed by look_at(p(φ), s(φ)), so -z always points at the
 #   current pipe/flange seam point.
 #
 # This gives a smooth orbit where the camera always faces the inspection seam,
@@ -143,6 +155,7 @@ def generate_waypoints(
     n: int = N_WAYPOINTS,
     start_deg: float = 0.0,
     full_circle: bool = True,
+    exclude_bottom: bool = True,
 ) -> Tuple[np.ndarray, List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
     """
     Generate N evenly spaced inspection waypoints.
@@ -160,6 +173,11 @@ def generate_waypoints(
         angles = np.linspace(start_rad, start_rad + 2 * np.pi, n, endpoint=False)
     else:
         angles = np.linspace(start_rad, start_rad + 2 * np.pi, n)
+    if exclude_bottom:
+        angles = np.asarray(
+            [phi for phi in angles if not is_in_bottom_forbidden_sector(phi)],
+            dtype=float,
+        )
 
     positions = []
     rotations = []
@@ -239,10 +257,18 @@ def densify_trajectory(poses: list, steps_between: int = 5) -> list:
 # ── Waypoint report ──────────────────────────────────────────────────────────
 
 def print_waypoints(angles, positions, rotations):
+    positions_arr = np.asarray(positions, dtype=float)
+    if len(positions_arr):
+        yz_delta = positions_arr[:, 1:3] - SEAM_CENTER[1:3]
+        standoff = float(np.max(np.linalg.norm(yz_delta, axis=1)))
+    else:
+        standoff = STANDOFF
+
     print(f"\n{'─'*70}")
     print(f"  Inspection Trajectory  |  Seam center: {SEAM_CENTER}")
     print(f"  Pipe/flange seam radius: {SEAM_RADIUS*1000:.1f} mm")
-    print(f"  Standoff: {STANDOFF} m  |  N waypoints: {len(angles)}")
+    print(f"  Standoff: {standoff:.3f} m  |  N waypoints: {len(angles)}")
+    print(f"  Bottom support exclusion: 270° ± {np.rad2deg(BOTTOM_FORBIDDEN_HALF_ANGLE):.1f}°")
     print(f"{'─'*70}")
     print(f"  {'#':>3}  {'φ [°]':>7}  {'x':>7}  {'y':>7}  {'z':>7}  quaternion [w x y z]")
     print(f"{'─'*70}")
@@ -262,11 +288,11 @@ if __name__ == "__main__":
     dists = [np.linalg.norm(p - SEAM_CENTER) for p in positions]
     print(f"Camera orbit distances from seam center: min={min(dists):.4f}  max={max(dists):.4f}")
 
-    # Verify: camera +z points toward the matching seam point.
+    # Verify: camera -z points toward the matching seam point.
     for i, (phi, pos, R) in enumerate(zip(angles, positions, rotations)):
-        cam_z = R[:, 2]
+        cam_minus_z = -R[:, 2]
         to_seam = seam_target_position(phi) - pos
         to_seam /= np.linalg.norm(to_seam)
-        alignment = np.dot(cam_z, to_seam)
+        alignment = np.dot(cam_minus_z, to_seam)
         assert alignment > 0.999, f"Waypoint {i}: look-at misaligned (dot={alignment:.4f})"
     print("All seam look-at constraints verified OK.")

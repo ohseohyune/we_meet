@@ -19,9 +19,11 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from control.franka_ik_solver import set_arm_qpos, solve_trajectory
 from mujoco_viewer import (
+    CAMERA_SITE_NAME,
+    EE_LOOK_AXIS_COL,
     EE_LOOK_AXIS_SIGN,
     FLANGE_CENTER,
-    FRANKA_READY,
+    ROBOT_READY,
     SCENE_XML,
     camera_poses_to_tcp_poses,
     generate_segmented_reference,
@@ -105,7 +107,7 @@ def set_inspection_waypoint_pose(
     waypoint_index: int,
     retries: int,
 ) -> None:
-    """Move Franka to one segmented inspection waypoint before rendering."""
+    """Move the 6-DOF robot to one segmented inspection waypoint before rendering."""
     _, _, _, _, camera_poses, look_targets = generate_segmented_reference(return_targets=True)
     waypoint_index = int(np.clip(waypoint_index, 0, len(camera_poses) - 1))
     tcp_poses = camera_poses_to_tcp_poses([camera_poses[waypoint_index]])
@@ -115,11 +117,12 @@ def set_inspection_waypoint_pose(
         mujoco,
         tcp_poses,
         look_target=look_targets[waypoint_index],
-        q_start=FRANKA_READY,
+        q_start=ROBOT_READY,
         retries=retries,
         verbose=False,
-        axis_col=2,
+        axis_col=EE_LOOK_AXIS_COL,
         axis_sign=EE_LOOK_AXIS_SIGN,
+        site_name=CAMERA_SITE_NAME,
     )
     if not flags[0]:
         raise RuntimeError(f"IK failed for inspection waypoint {waypoint_index}.")

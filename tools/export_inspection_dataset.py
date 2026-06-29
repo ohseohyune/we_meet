@@ -20,16 +20,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from control.franka_ik_solver import set_arm_qpos, site_pose, solve_trajectory
+from control.franka_ik_solver import evaluate_look_at_trajectory, set_arm_qpos, site_pose, solve_trajectory
 from mujoco_viewer import (
+    CAPTURE_MAX_LOOK_DEG,
+    CAPTURE_MAX_POS_ERR,
+    CAMERA_SITE_NAME,
     D405_DEPTH_HEIGHT,
     D405_DEPTH_WIDTH,
     D405_MAX_Z,
     D405_MIN_Z,
     D405_VERTICAL_FOV_DEG,
+    EE_LOOK_AXIS_COL,
     EE_LOOK_AXIS_SIGN,
     FLANGE_CENTER,
-    FRANKA_READY,
+    NDOF,
+    RIGHT_BIASED_READY,
+    RIGHT_POSTURE_BIAS,
     SCENE_XML,
     SEAM_TARGET_RADIUS,
     TRAJECTORY_CENTER,
@@ -37,6 +43,7 @@ from mujoco_viewer import (
     camera_poses_to_tcp_poses,
     generate_segmented_reference,
     mask_d405_depth,
+    right_posture_weights,
     save_depth_png,
     set_d405_depth_rendering,
 )
@@ -57,6 +64,18 @@ def transform_from_pos_rot(pos: np.ndarray, R: np.ndarray) -> np.ndarray:
 
 def flatten_transform(prefix: str, T: np.ndarray) -> dict[str, float]:
     return {f"{prefix}_{r}{c}": float(T[r, c]) for r in range(4) for c in range(4)}
+
+
+def first_available_site_pose(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    names: tuple[str, ...],
+) -> np.ndarray:
+    for name in names:
+        site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, name)
+        if site_id >= 0:
+            return site_pose(model, data, mujoco, name)
+    raise ValueError(f"None of these MuJoCo sites exist: {names}")
 
 
 def pinhole_intrinsics(width: int, height: int, fovy_deg: float) -> dict[str, float]:
@@ -132,6 +151,7 @@ def solve_dataset_ik(
     rng_seed: int,
 ) -> tuple[np.ndarray, list[bool]]:
     """Solve IK, resetting the seed at each independent multi-ring pass."""
+    posture_weights = right_posture_weights(traj_info, len(tcp_poses))
     if not multi_ring:
         return solve_trajectory(
             model,
@@ -139,34 +159,45 @@ def solve_dataset_ik(
             mujoco,
             tcp_poses,
             look_target=look_targets,
-            q_start=FRANKA_READY.copy(),
+            q_start=RIGHT_BIASED_READY.copy(),
             retries=retries,
             rng_seed=rng_seed,
             verbose=False,
-            axis_col=2,
+            axis_col=EE_LOOK_AXIS_COL,
             axis_sign=EE_LOOK_AXIS_SIGN,
+            posture_bias=RIGHT_POSTURE_BIAS,
+            posture_weights=posture_weights,
+            max_capture_look_deg=CAPTURE_MAX_LOOK_DEG,
+            max_capture_pos_err=CAPTURE_MAX_POS_ERR,
+            site_name=CAMERA_SITE_NAME,
         )
 
     ring_ids = np.asarray(traj_info["ring_id"], dtype=int)
-    Q = np.zeros((len(tcp_poses), 7))
+    Q = np.zeros((len(tcp_poses), NDOF))
     flags: list[bool] = [False] * len(tcp_poses)
 
     for ring_id in np.unique(ring_ids):
         idx = np.flatnonzero(ring_ids == ring_id)
         tcp_ring = [tcp_poses[i] for i in idx]
         targets_ring = look_targets[idx]
+        posture_weights_ring = posture_weights[idx]
         Q_ring, flags_ring = solve_trajectory(
             model,
             data,
             mujoco,
             tcp_ring,
             look_target=targets_ring,
-            q_start=FRANKA_READY.copy(),
+            q_start=RIGHT_BIASED_READY.copy(),
             retries=retries,
             rng_seed=rng_seed + int(ring_id),
             verbose=False,
-            axis_col=2,
+            axis_col=EE_LOOK_AXIS_COL,
             axis_sign=EE_LOOK_AXIS_SIGN,
+            posture_bias=RIGHT_POSTURE_BIAS,
+            posture_weights=posture_weights_ring,
+            max_capture_look_deg=CAPTURE_MAX_LOOK_DEG,
+            max_capture_pos_err=CAPTURE_MAX_POS_ERR,
+            site_name=CAMERA_SITE_NAME,
         )
         Q[idx] = Q_ring
         for local_i, ok in enumerate(flags_ring):
@@ -258,11 +289,31 @@ def export_dataset(
         rng_seed=rng_seed,
     )
 
-    n_ok = int(sum(flags))
-    if n_ok != len(flags):
-        failed = [i for i, ok in enumerate(flags) if not ok]
-        print(f"[WARN] IK failed or approximate for frames: {failed}")
-    print(f"[DATASET] IK convergence: {n_ok}/{len(flags)}")
+    capture_metrics = evaluate_look_at_trajectory(
+        model,
+        data,
+        mujoco,
+        Q,
+        tcp_poses,
+        look_targets,
+        axis_col=EE_LOOK_AXIS_COL,
+        axis_sign=EE_LOOK_AXIS_SIGN,
+        site_name=CAMERA_SITE_NAME,
+        max_pos_err=CAPTURE_MAX_POS_ERR,
+        max_look_deg=CAPTURE_MAX_LOOK_DEG,
+    )
+    capture_valid = capture_metrics["capture_valid"]
+    flags = [bool(ok) for ok in capture_valid]
+
+    n_ok = int(np.count_nonzero(capture_valid))
+    invalid_capture_count = int(len(flags) - n_ok)
+    if invalid_capture_count:
+        failed = [i for i, ok in enumerate(capture_valid) if not ok]
+        print(f"[WARN] Look-at/position gate failed for frames: {failed}")
+    print(
+        f"[DATASET] Capture-valid frames: {n_ok}/{len(flags)} "
+        f"(look <= {CAPTURE_MAX_LOOK_DEG:.1f}deg, pos <= {CAPTURE_MAX_POS_ERR*1000:.1f}mm)"
+    )
 
     prepare_output_dir(out_dir)
 
@@ -283,8 +334,15 @@ def export_dataset(
                     "start": int(start_index),
                     "end": int(start_index + n_frames + separator_count - 1),
                     "count": int(n_frames + separator_count),
-                    "capture_count": int(n_frames),
+                    "requested_capture_count": int(n_frames),
+                    "valid_capture_count": int(n_ok),
+                    "invalid_capture_count": int(invalid_capture_count),
                     "separator_count": int(separator_count),
+                },
+                "capture_gate": {
+                    "max_look_deg": float(CAPTURE_MAX_LOOK_DEG),
+                    "max_position_error_m": float(CAPTURE_MAX_POS_ERR),
+                    "invalid_frames_are_black": True,
                 },
                 "frame_plan": frame_plan,
                 "insert_separators": bool(insert_separators),
@@ -314,6 +372,10 @@ def export_dataset(
         "segment_angle_rad",
         "segment_angle_deg",
         "ik_success",
+        "capture_valid",
+        "invalid_reason",
+        "capture_look_error_deg",
+        "capture_position_error_mm",
         "rgb_path",
         "depth_png_path",
         "depth_npy_path",
@@ -348,7 +410,7 @@ def export_dataset(
         "optical_site_qy",
         "optical_site_qz",
     ]
-    q_fields = [f"q{i}" for i in range(1, 8)]
+    q_fields = [f"q{i}" for i in range(1, NDOF + 1)]
     T_fields = (
         list(flatten_transform("T_world_render_camera", np.eye(4)).keys())
         + list(flatten_transform("T_world_tcp", np.eye(4)).keys())
@@ -398,6 +460,10 @@ def export_dataset(
                 "segment_angle_rad": "",
                 "segment_angle_deg": "",
                 "ik_success": "",
+                "capture_valid": "",
+                "invalid_reason": "",
+                "capture_look_error_deg": "",
+                "capture_position_error_mm": "",
                 "rgb_path": str(rgb_rel),
                 "depth_png_path": str(depth_png_rel),
                 "depth_npy_path": str(depth_npy_rel),
@@ -432,10 +498,94 @@ def export_dataset(
                 "optical_site_qy": np.nan,
                 "optical_site_qz": np.nan,
             }
-            row.update({f"q{j + 1}": np.nan for j in range(7)})
+            row.update({f"q{j + 1}": np.nan for j in range(NDOF)})
             row.update(flatten_transform("T_world_render_camera", T_nan))
             row.update(flatten_transform("T_world_tcp", T_nan))
             row.update(flatten_transform("T_world_optical_site", T_nan))
+            writer.writerow(row)
+
+        def write_invalid_capture(frame_number: int, reason: str, i: int, q: np.ndarray) -> None:
+            rgb_rel = Path("rgb") / f"frame_{frame_number:03d}.png"
+            depth_png_rel = Path("depth_png") / f"frame_{frame_number:03d}.png"
+            depth_npy_rel = Path("depth_meters") / f"frame_{frame_number:03d}.npy"
+            depth_m = empty_depth_frame()
+
+            save_rgb_png(black_rgb_frame(), out_dir / rgb_rel)
+            save_rgb_png(black_rgb_frame(), out_dir / depth_png_rel)
+            np.save(out_dir / depth_npy_rel, depth_m)
+
+            set_arm_qpos(model, data, mujoco, q)
+            T_tcp = first_available_site_pose(model, data, ("tcp", "ee_site"))
+            T_optical_site = first_available_site_pose(
+                model,
+                data,
+                ("camera_optical_center", "ee_site"),
+            )
+            T_render_camera = transform_from_pos_rot(
+                data.cam_xpos[camera_id].copy(),
+                data.cam_xmat[camera_id].reshape(3, 3).copy(),
+            )
+            q_render = rot_to_quat(T_render_camera[:3, :3])
+            q_tcp = rot_to_quat(T_tcp[:3, :3])
+            q_optical = rot_to_quat(T_optical_site[:3, :3])
+
+            row = {
+                "capture_index": i,
+                "frame": frame_number,
+                "is_separator": 1,
+                "separator_reason": reason,
+                "ring_id": int(ring_ids[i]),
+                "ring_name": str(ring_names[i]),
+                "ring_radius": float(ring_radii[i]),
+                "ring_x_offset": float(ring_x_offsets[i]),
+                "segment_id": int(segment_ids[i]),
+                "segment_name": str(segment_names[i]),
+                "time_s": float(time_values[i]),
+                "segment_angle_rad": float(angles[i]),
+                "segment_angle_deg": float(np.rad2deg(angles[i])),
+                "ik_success": int(flags[i]),
+                "capture_valid": 0,
+                "invalid_reason": reason,
+                "capture_look_error_deg": float(capture_metrics["look_deg"][i]),
+                "capture_position_error_mm": float(capture_metrics["pos_err"][i]) * 1000.0,
+                "rgb_path": str(rgb_rel),
+                "depth_png_path": str(depth_png_rel),
+                "depth_npy_path": str(depth_npy_rel),
+                "valid_depth_pixels": 0,
+                "depth_min_valid_m": np.nan,
+                "depth_max_valid_m": np.nan,
+                "desired_camera_x": float(camera_poses[i][0, 3]),
+                "desired_camera_y": float(camera_poses[i][1, 3]),
+                "desired_camera_z": float(camera_poses[i][2, 3]),
+                "seam_target_x": float(look_targets[i][0]),
+                "seam_target_y": float(look_targets[i][1]),
+                "seam_target_z": float(look_targets[i][2]),
+                "render_camera_x": float(T_render_camera[0, 3]),
+                "render_camera_y": float(T_render_camera[1, 3]),
+                "render_camera_z": float(T_render_camera[2, 3]),
+                "render_camera_qw": float(q_render[0]),
+                "render_camera_qx": float(q_render[1]),
+                "render_camera_qy": float(q_render[2]),
+                "render_camera_qz": float(q_render[3]),
+                "tcp_x": float(T_tcp[0, 3]),
+                "tcp_y": float(T_tcp[1, 3]),
+                "tcp_z": float(T_tcp[2, 3]),
+                "tcp_qw": float(q_tcp[0]),
+                "tcp_qx": float(q_tcp[1]),
+                "tcp_qy": float(q_tcp[2]),
+                "tcp_qz": float(q_tcp[3]),
+                "optical_site_x": float(T_optical_site[0, 3]),
+                "optical_site_y": float(T_optical_site[1, 3]),
+                "optical_site_z": float(T_optical_site[2, 3]),
+                "optical_site_qw": float(q_optical[0]),
+                "optical_site_qx": float(q_optical[1]),
+                "optical_site_qy": float(q_optical[2]),
+                "optical_site_qz": float(q_optical[3]),
+            }
+            row.update({f"q{j + 1}": float(q[j]) for j in range(NDOF)})
+            row.update(flatten_transform("T_world_render_camera", T_render_camera))
+            row.update(flatten_transform("T_world_tcp", T_tcp))
+            row.update(flatten_transform("T_world_optical_site", T_optical_site))
             writer.writerow(row)
 
         for i, (q, ok, t, angle, T_cam_des, seam_target) in enumerate(
@@ -452,6 +602,11 @@ def export_dataset(
                     output_i += 1
 
             frame_number = start_index + output_i
+            if not bool(capture_valid[i]):
+                write_invalid_capture(frame_number, "invalid_capture:look_or_position", i, q)
+                output_i += 1
+                continue
+
             set_arm_qpos(model, data, mujoco, q)
 
             rgb, depth_m = render_frame_pair(
@@ -474,8 +629,12 @@ def export_dataset(
                 depth_min = float("nan")
                 depth_max = float("nan")
 
-            T_tcp = site_pose(model, data, mujoco, "tcp")
-            T_optical_site = site_pose(model, data, mujoco, "camera_optical_center")
+            T_tcp = first_available_site_pose(model, data, ("tcp", "ee_site"))
+            T_optical_site = first_available_site_pose(
+                model,
+                data,
+                ("camera_optical_center", "ee_site"),
+            )
             T_render_camera = transform_from_pos_rot(
                 data.cam_xpos[camera_id].copy(),
                 data.cam_xmat[camera_id].reshape(3, 3).copy(),
@@ -500,6 +659,10 @@ def export_dataset(
                 "segment_angle_rad": float(angle),
                 "segment_angle_deg": float(np.rad2deg(angle)),
                 "ik_success": int(ok),
+                "capture_valid": int(capture_valid[i]),
+                "invalid_reason": "",
+                "capture_look_error_deg": float(capture_metrics["look_deg"][i]),
+                "capture_position_error_mm": float(capture_metrics["pos_err"][i]) * 1000.0,
                 "rgb_path": str(rgb_rel),
                 "depth_png_path": str(depth_png_rel),
                 "depth_npy_path": str(depth_npy_rel),
@@ -534,7 +697,7 @@ def export_dataset(
                 "optical_site_qy": float(q_optical[2]),
                 "optical_site_qz": float(q_optical[3]),
             }
-            row.update({f"q{j + 1}": float(q[j]) for j in range(7)})
+            row.update({f"q{j + 1}": float(q[j]) for j in range(NDOF)})
             row.update(flatten_transform("T_world_render_camera", T_render_camera))
             row.update(flatten_transform("T_world_tcp", T_tcp))
             row.update(flatten_transform("T_world_optical_site", T_optical_site))
@@ -549,7 +712,9 @@ def export_dataset(
             "Inspection dataset export\n"
             "=========================\n\n"
             f"Frame range: frame_{start_index:03d} ~ frame_{start_index + n_frames + separator_count - 1:03d}\n"
-            f"Capture count: {n_frames}\n\n"
+            f"Requested capture poses: {n_frames}\n"
+            f"Valid capture count: {n_ok}\n"
+            f"Invalid black capture frames: {invalid_capture_count}\n\n"
             f"Separator frames: {separator_count}\n"
             f"Trajectory mode: {'multi-ring' if multi_ring else 'single-ring'}\n"
             f"Overlap request: {overlap if overlap is not None else 'manual frame count'}\n\n"
@@ -558,6 +723,8 @@ def export_dataset(
             "  depth_png/frame_XXX.png    depth visualization, terrain colormap\n"
             "  depth_meters/frame_XXX.npy raw metric depth array in meters\n"
             "  metadata.csv               joints, TCP pose, optical site pose, render camera pose\n\n"
+            "Frames with capture_valid=0 are black invalid-capture frames and should be\n"
+            "excluded from stitching/reconstruction.\n\n"
             "Use T_world_render_camera for image registration/stitching because it is the\n"
             "actual MuJoCo fixed-camera pose used by the renderer.\n"
         )
@@ -565,9 +732,11 @@ def export_dataset(
     with open(out_dir / "README.md", "w") as f:
         f.write(
             "# Pipe Flange Inspection Dataset\n\n"
-            "MuJoCo Franka Panda + D405-style camera inspection dataset입니다.\n\n"
+            "MuJoCo 6-DOF DH robot + D405-style camera inspection dataset입니다.\n\n"
             f"- Frame range: `frame_{start_index:03d}` ~ `frame_{start_index + n_frames + separator_count - 1:03d}`\n"
-            f"- Capture count: `{n_frames}`\n"
+            f"- Requested capture poses: `{n_frames}`\n"
+            f"- Valid capture count: `{n_ok}`\n"
+            f"- Invalid black capture frames: `{invalid_capture_count}`\n"
             f"- Separator frames: `{separator_count}`\n"
             f"- Trajectory mode: `{'multi-ring' if multi_ring else 'single-ring'}`\n"
             f"- Overlap request: `{overlap if overlap is not None else 'manual frame count'}`\n"
@@ -593,9 +762,12 @@ def export_dataset(
             "- `capture_index`: 이 export 안에서의 0-based 순서\n"
             "- `frame`: 파일 번호\n"
             "- `is_separator`: 검은 구분 이미지이면 1, 실제 capture이면 0\n"
+            "- `capture_valid`: stitching/reconstruction에 사용할 수 있는 촬영이면 1\n"
+            "- `invalid_reason`: 검은 invalid capture frame의 제외 사유\n"
+            "- `capture_look_error_deg`, `capture_position_error_mm`: look-at gate 검증 오차\n"
             "- `ring_id`, `ring_name`: multi-ring capture pass 정보\n"
             "- `seam_target_x/y/z`: 이 frame에서 카메라가 바라본 접합부 seam point\n"
-            "- `q1` ~ `q7`: Franka joint angle [rad]\n"
+            "- `q1` ~ `q6`: robot joint angle [rad]\n"
             "- `T_world_render_camera_*`: 실제 렌더 카메라 pose\n"
             "- `T_world_tcp_*`: TCP pose\n"
             "- `T_world_optical_site_*`: camera optical center site pose\n\n"
@@ -612,7 +784,7 @@ def export_dataset(
             "    [float(row[f'T_world_render_camera_{r}{c}']) for c in range(4)]\n"
             "    for r in range(4)\n"
             "])\n"
-            "q = np.array([float(row[f'q{i}']) for i in range(1, 8)])\n"
+            f"q = np.array([float(row[f'q{{i}}']) for i in range(1, {NDOF + 1})])\n"
             "```\n"
         )
 

@@ -1,4 +1,8 @@
 mujoco>=3.0
 numpy>=1.23
 Pillow>=9.0
-
+matplotlib>=3.6
+imageio[ffmpeg]>=2.31
+pyqtgraph>=0.13
+PyQt5>=5.15
+PyOpenGL>=3.1
