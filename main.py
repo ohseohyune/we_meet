@@ -47,7 +47,7 @@ except ImportError:
     MUJOCO_AVAILABLE = False
 
 
-SCENE_XML = os.path.join(os.path.dirname(__file__), "dh2mujoco", "output", "generated_robot.xml")
+SCENE_XML = os.path.join(os.path.dirname(__file__), "scene.xml")
 MUJOCO_JOINT_NAMES = [f"q{i}" for i in range(1, 7)]
 MUJOCO_ACTUATOR_NAMES = [f"p{i}" for i in range(1, 7)]
 FLANGE_CENTER = np.array([0.67000, 0.0, 0.5286])

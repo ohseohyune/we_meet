@@ -1,0 +1,164 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="franka_flange_inspection">
+  <compiler angle="radian" autolimits="true" />
+  <option gravity="0 0 -9.81" timestep="0.002" integrator="RK4" />
+  <size nuser_actuator="5" />
+  <statistic extent="1" />
+  <asset>
+    <texture name="grid_floor" type="2d" builtin="checker" rgb1="0.72 0.72 0.72" rgb2="0.48 0.48 0.48" width="512" height="512" />
+    <material name="floor_mat" texture="grid_floor" texrepeat="8 8" reflectance="0.1" />
+    <texture name="skybox" type="skybox" builtin="gradient" rgb1="0.70 0.78 0.90" rgb2="0.20 0.30 0.50" width="512" height="512" />
+
+    </asset>
+
+  <default>
+    <geom contype="0" conaffinity="0" condim="3" />
+    <site size="0.008" rgba="1 1 0 1" type="sphere" />
+    <default class="panda">
+      <joint pos="0 0 0" axis="0 0 1" limited="true" />
+      <position forcelimited="true" ctrllimited="true" user="1002 40 2001 -0.005 0.005" />
+      <default class="panda_viz">
+        <geom contype="0" conaffinity="0" group="0" type="mesh" rgba=".92 .92 .95 1" />
+      </default>
+      <default class="panda_grey_viz">
+        <geom contype="0" conaffinity="0" group="0" type="mesh" rgba=".4 .4 .4 1" />
+      </default>
+      <default class="panda_col">
+        <geom contype="0" conaffinity="0" group="3" type="mesh" rgba=".5 .6 .7 .25" />
+      </default>
+      <default class="panda_arm">
+        <joint damping="100" />
+      </default>
+      <default class="panda_forearm">
+        <joint damping="10" />
+      </default>
+    </default>
+  </default>
+
+  <worldbody>
+    <light name="sun" pos="0.5 0 3" dir="0 0 -1" diffuse="0.8 0.8 0.8" castshadow="true" />
+    <light name="fill" pos="-1 1 2" dir="0.3 -0.3 -1" diffuse="0.3 0.3 0.3" castshadow="false" />
+    <geom name="floor" type="plane" size="4 4 0.1" pos="0 0 0" material="floor_mat" contype="1" conaffinity="1" />
+    <site name="world_origin" pos="0 0 0" size="0.018" rgba="1 1 1 1" />
+
+    
+    <body name="base" pos="0 0 0">
+      <geom name="foot" type="cylinder" fromto="0 0 0 0 0 0.02" size="0.07" rgba="0.25 0.25 0.3 1" />
+      <geom name="column" type="cylinder" fromto="0 0 0.02 0 0 0.0948" size="0.03" rgba="0.3 0.3 0.35 1" />
+      <body name="link1" pos="0.000000 0.000000 0.144763" quat="0.002699 0.000000 0.000000 -0.999996">
+        <joint name="q1" />
+        <geom name="link1_g" type="capsule" fromto="0 0 0 -0.061099 0.000000 0.132184" size="0.025" rgba="0.85 0.3 0.3 1" />
+        <geom name="j1_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+        <body name="link2" pos="-0.061099 0.000000 0.132184" quat="0.707799 -0.706413 0.000828 0.000830">
+          <joint name="q2" />
+          <geom name="link2_g" type="capsule" fromto="0 0 0 0.345932 0.000000 0.091502" size="0.025" rgba="0.85 0.55 0.2 1" />
+          <geom name="j2_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+          <body name="link3" pos="0.345932 0.000000 0.091502" quat="0.704644 -0.001551 -0.001561 -0.709558">
+            <joint name="q3" />
+            <geom name="link3_g" type="capsule" fromto="0 0 0 0.103901 0.000000 0.005000" size="0.025" rgba="0.8 0.8 0.25 1" />
+            <geom name="j3_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+            <body name="link4" pos="0.103901 0.000000 0.005000" quat="0.705697 0.708499 0.003291 -0.003278">
+              <joint name="q4" />
+              <geom name="link4_g" type="capsule" fromto="0 0 0 -0.000588 0.000000 0.344628" size="0.025" rgba="0.3 0.75 0.4 1" />
+              <geom name="j4_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+              <body name="link5" pos="-0.000588 0.000000 0.344628" quat="0.013053 -0.013195 -0.710781 -0.703168">
+                <joint name="q5" />
+                <geom name="link5_g" type="capsule" fromto="0 0 0 0.074472 0.000000 -0.024818" size="0.025" rgba="0.3 0.6 0.85 1" />
+                <geom name="j5_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+                <body name="link6" pos="0.074472 0.000000 -0.024818" quat="0.501595 -0.493208 0.498313 0.506787">
+                  <joint name="q6" />
+                  <geom name="link6_g" type="capsule" fromto="0 0 0 0.070882 -0.244194 0.030304" size="0.025" rgba="0.6 0.4 0.85 1" />
+                  <geom name="j6_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+                  <body name="ee" pos="0.070882 -0.244194 0.030304" quat="0.724562 -0.689210 0.000000 0.000000">
+                    <site name="tcp" size="0.004" rgba="1 0 0 1" />
+                    <body name="d405_mount" pos="-0.03667 0.00798 0.05980" quat="0.68961 0.06423 -0.13501 -0.70858">
+                      <inertial pos="0 0 0" mass="0.05" diaginertia="1e-5 1e-5 1e-5" />
+                      <site name="camera_optical_center" pos="0 0 0" size="0.010" rgba="1 0.6 0 0.9" />
+                      <camera name="ee_cam" mode="fixed" pos="0 0 0" fovy="65" />
+                    </body>
+                  </body>
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  <body name="pipe_flange_assembly" pos="0.4250 0.0000 0.5700" euler="0 1.5708 0">
+      <geom name="pipe_outer" type="cylinder" pos="0 0 0" size="0.03025 0.1250" rgba="0.55 0.55 0.60 1" contype="1" conaffinity="1" />
+      <geom name="pipe_bore" type="cylinder" pos="0 0 0" size="0.0271 0.1260" rgba="0.12 0.12 0.12 1" />
+      <geom name="flange_disc" type="cylinder" pos="0 0 0.13775" size="0.0760 0.01275" rgba="0.45 0.50 0.56 1" contype="1" conaffinity="1" />
+      <geom name="flange_bore" type="cylinder" pos="0 0 0.13775" size="0.03025 0.01375" rgba="0.11 0.11 0.11 1" />
+      <geom name="raised_face" type="cylinder" pos="0 0 0.1515" size="0.0502 0.0010" rgba="0.62 0.64 0.67 1" />
+      <geom name="raised_bore" type="cylinder" pos="0 0 0.1515" size="0.03025 0.0015" rgba="0.10 0.10 0.10 1" />
+      <geom name="bolt_0" type="cylinder" pos=" 0.0628  0.0000 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="bolt_1" type="cylinder" pos=" 0.0444  0.0444 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="bolt_2" type="cylinder" pos=" 0.0000  0.0628 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="bolt_3" type="cylinder" pos="-0.0444  0.0444 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="bolt_4" type="cylinder" pos="-0.0628  0.0000 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="bolt_5" type="cylinder" pos="-0.0444 -0.0444 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="bolt_6" type="cylinder" pos=" 0.0000 -0.0628 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="bolt_7" type="cylinder" pos=" 0.0444 -0.0444 0.1545" size="0.0093 0.0025" rgba="0.22 0.22 0.22 1" />
+      <geom name="hole_0" type="cylinder" pos=" 0.0628  0.0000 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <geom name="hole_1" type="cylinder" pos=" 0.0444  0.0444 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <geom name="hole_2" type="cylinder" pos=" 0.0000  0.0628 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <geom name="hole_3" type="cylinder" pos="-0.0444  0.0444 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <geom name="hole_4" type="cylinder" pos="-0.0628  0.0000 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <geom name="hole_5" type="cylinder" pos="-0.0444 -0.0444 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <geom name="hole_6" type="cylinder" pos=" 0.0000 -0.0628 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <geom name="hole_7" type="cylinder" pos=" 0.0444 -0.0444 0.1535" size="0.0063 0.0012" rgba="0.04 0.04 0.04 1" />
+      <site name="flange_center" pos="0 0 0.1250" size="0.013" rgba="1 0 0 0" />
+      <site name="flange_frame_y" pos="0 0.08 0.1250" size="0.005 0.08" euler="1.5708 0 0" rgba="0 1 0 0" type="cylinder" />
+      <site name="flange_frame_x" pos="0.08 0 0.1250" size="0.005 0.08" euler="0 1.5708 0" rgba="1 0 0 0" type="cylinder" />
+      <site name="flange_frame_z" pos="0 0 0.2050" size="0.005 0.08" rgba="0 0 1 0" type="cylinder" />
+    </body>
+
+    <body name="traj_markers" pos="0 0 0">
+      <site name="wp_00" pos="0.4000  0.1652 0.5700" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_01" pos="0.4000  0.1627 0.5987" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_02" pos="0.4000  0.1553 0.6265" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_03" pos="0.4000  0.1431 0.6526" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_04" pos="0.4000  0.1266 0.6762" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_05" pos="0.4000  0.1062 0.6966" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_06" pos="0.4000  0.0826 0.7131" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_07" pos="0.4000  0.0565 0.7253" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_08" pos="0.4000  0.0287 0.7327" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_09" pos="0.4000  0.0000 0.7352" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_10" pos="0.4000 -0.0287 0.7327" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_11" pos="0.4000 -0.0565 0.7253" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_12" pos="0.4000 -0.0826 0.7131" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_13" pos="0.4000 -0.1062 0.6966" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_14" pos="0.4000 -0.1266 0.6762" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_15" pos="0.4000 -0.1431 0.6526" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_16" pos="0.4000 -0.1553 0.6265" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_17" pos="0.4000 -0.1627 0.5987" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_18" pos="0.4000 -0.1652 0.5700" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_19" pos="0.4000 -0.1627 0.5413" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_20" pos="0.4000 -0.1553 0.5135" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_21" pos="0.4000 -0.1431 0.4874" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_22" pos="0.4000 -0.1266 0.4638" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_23" pos="0.4000 -0.1062 0.4434" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_24" pos="0.4000 -0.0826 0.4269" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_25" pos="0.4000 -0.0565 0.4147" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_26" pos="0.4000 -0.0287 0.4073" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_27" pos="0.4000 -0.0000 0.4048" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_28" pos="0.4000  0.0287 0.4073" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_29" pos="0.4000  0.0565 0.4147" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_30" pos="0.4000  0.0826 0.4269" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_31" pos="0.4000  0.1062 0.4434" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_32" pos="0.4000  0.1266 0.4638" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_33" pos="0.4000  0.1431 0.4874" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_34" pos="0.4000  0.1553 0.5135" size="0.010" rgba="0 1 1 0" />
+      <site name="wp_35" pos="0.4000  0.1627 0.5413" size="0.010" rgba="0 1 1 0" />
+    </body>
+  </worldbody>
+
+  <actuator>
+    <position name="p1" joint="q1" />
+    <position name="p2" joint="q2" />
+    <position name="p3" joint="q3" />
+    <position name="p4" joint="q4" />
+    <position name="p5" joint="q5" />
+    <position name="p6" joint="q6" />
+  </actuator>
+  </mujoco>
