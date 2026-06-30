@@ -6,3 +6,4 @@ imageio[ffmpeg]>=2.31
 pyqtgraph>=0.13
 PyQt5>=5.15
 PyOpenGL>=3.1
+scipy>=1.10
