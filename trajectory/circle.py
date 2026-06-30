@@ -107,19 +107,19 @@ DEFAULT_MULTI_RING_SPECS = (
     {
         "name": "near_oblique",
         "description": "closer oblique view of the seam",
-        "x_offset": -0.1533,
+        "x_offset": -0.3000,
         "radius": 0.120,
     },
     {
         "name": "nominal",
         "description": "nominal inspection view",
-        "x_offset": -0.1533,
+        "x_offset": -0.3000,
         "radius": 0.120,
     },
     {
         "name": "far_oblique",
         "description": "farther oblique view for depth fusion overlap",
-        "x_offset": -0.1533,
+        "x_offset": -0.3000,
         "radius": 0.120,
     },
 )

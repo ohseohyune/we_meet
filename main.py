@@ -10,8 +10,9 @@ import os
 import time
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib-cache")
-if not os.environ.get("DISPLAY"):
-    os.environ.setdefault("MUJOCO_GL", "egl")
+if not os.environ.get("MUJOCO_GL"):
+    import platform
+    os.environ["MUJOCO_GL"] = "cgl" if platform.system() == "Darwin" else "egl"
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,10 +29,12 @@ from control.franka_ik_solver import (
     solve_trajectory,
 )
 from viz import (
+    CombinedView,
     Dashboard,
     Renderer3D,
     RingLogger,
     Skeleton3D,
+    combined_view_available,
     dashboard_available,
     save_summary_png,
     skeleton3d_available,
@@ -50,8 +53,8 @@ except ImportError:
 SCENE_XML = os.path.join(os.path.dirname(__file__), "scene.xml")
 MUJOCO_JOINT_NAMES = [f"q{i}" for i in range(1, 7)]
 MUJOCO_ACTUATOR_NAMES = [f"p{i}" for i in range(1, 7)]
-FLANGE_CENTER = np.array([0.67000, 0.0, 0.5286])
-TRAJECTORY_CENTER = np.array([0.51670, 0.0, 0.5286])
+FLANGE_CENTER = np.array([0.81000, 0.0, 0.5700])
+TRAJECTORY_CENTER = np.array([0.51000, 0.0, 0.5700])
 PIPE_OD = 0.0605
 SEAM_RADIUS = PIPE_OD / 2.0
 ROBOT_READY = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571])
@@ -166,7 +169,7 @@ def run_tracking(
 
 
 def run_viewer_reference(
-    center: tuple[float, float, float] = (0.51670, 0.0, 0.5286),
+    center: tuple[float, float, float] = (0.51000, 0.0, 0.5700),
     radius: float = 0.1200,
     segment_duration: float = 9.0,
     dt: float = 0.02,
@@ -548,6 +551,7 @@ def run_mujoco_viewer(
     sim_mp4 = os.path.join(out_dir, "sim.mp4")
     logger = RingLogger(window_seconds=dashboard_window, nominal_dt=float(model.opt.timestep))
     tcp_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "tcp")
+    cam_site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, CAMERA_SITE_NAME)
     skeleton_body_names = ("link1", "link2", "link3", "link4", "link5", "link6", "ee")
     skeleton_body_ids = [
         mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
@@ -569,6 +573,7 @@ def run_mujoco_viewer(
     requested_mode = mode
     dashboard_ok = dashboard_available()
     skeleton_ok = skeleton and skeleton3d_available()
+    combined_ok = skeleton and combined_view_available()
     if mode == "live" and not dashboard_ok:
         print("[경고] pyqtgraph/Qt를 사용할 수 없어 dashboard만 비활성화합니다. MuJoCo viewer는 계속 실행합니다.")
     if mode == "live" and skeleton and not skeleton_ok:
@@ -591,6 +596,7 @@ def run_mujoco_viewer(
     )
     dashboard = None
     skeleton_view = None
+    combined_view = None
     try:
         renderer.start()
     except Exception as exc:
@@ -617,17 +623,29 @@ def run_mujoco_viewer(
         else:
             raise
 
-    if mode == "live" and dashboard_ok:
-        dashboard = Dashboard(window_seconds=dashboard_window, heatmap=heatmap, fixed_y=fixed_y)
-        if not dashboard.start():
-            print("[경고] pyqtgraph dashboard 시작 실패. dashboard만 비활성화하고 MuJoCo viewer는 계속 실행합니다.")
-            dashboard = None
+    if mode == "live" and combined_ok:
+        combined_view = CombinedView(
+            ref_tcp_path,
+            body_names=skeleton_body_names,
+            window_seconds=dashboard_window,
+            heatmap=heatmap,
+            fixed_y=fixed_y,
+        )
+        if not combined_view.start():
+            print("[경고] 통합 창 시작 실패. 개별 창으로 대체합니다.")
+            combined_view = None
 
-    if mode == "live" and skeleton_ok:
-        skeleton_view = Skeleton3D(ref_tcp_path, body_names=skeleton_body_names)
-        if not skeleton_view.start():
-            print("[경고] 3D skeleton 창 시작 실패. MuJoCo viewer는 계속 실행합니다.")
-            skeleton_view = None
+    if combined_view is None:
+        if mode == "live" and dashboard_ok:
+            dashboard = Dashboard(window_seconds=dashboard_window, heatmap=heatmap, fixed_y=fixed_y)
+            if not dashboard.start():
+                print("[경고] pyqtgraph dashboard 시작 실패. dashboard만 비활성화하고 MuJoCo viewer는 계속 실행합니다.")
+                dashboard = None
+        if mode == "live" and skeleton_ok:
+            skeleton_view = Skeleton3D(ref_tcp_path, body_names=skeleton_body_names)
+            if not skeleton_view.start():
+                print("[경고] 3D skeleton 창 시작 실패. MuJoCo viewer는 계속 실행합니다.")
+                skeleton_view = None
 
     print("\n[MuJoCo] generated_robot.xml 6-DOF DH robot IK trajectory를 재생합니다.")
     print(f"[MuJoCo] mode={mode}, log={log_csv}")
@@ -659,17 +677,27 @@ def run_mujoco_viewer(
                 logger.log(traj_t, q, data.qpos[:6], p_tcp, p_ref=p_ref)
                 progress = (traj_t - time_hist[0]) / max(time_hist[-1] - time_hist[0], 1.0e-9)
                 renderer.sync(tcp_pos=p_tcp, target_pos=p_ref, q_ref=q, progress=progress)
-                if dashboard is not None:
-                    dashboard.push(logger.snapshot())
-                if skeleton_view is not None:
-                    skeleton_view.push(
-                        {
-                            "body_pos": data.xpos[skeleton_body_ids].copy(),
-                            "tcp_pos": p_tcp,
-                            "target_pos": p_ref,
-                            "progress": progress,
-                        }
-                    )
+                _cam_pos = data.site_xpos[cam_site_id].copy() if cam_site_id >= 0 else None
+                _cam_dir = None
+                if cam_site_id >= 0:
+                    _xmat = data.site_xmat[cam_site_id].reshape(3, 3)
+                    _cam_dir = _cam_pos - _xmat[:, 2] * 0.12  # look direction arrow (12 cm)
+                _skel_state = {
+                    "body_pos": data.xpos[skeleton_body_ids].copy(),
+                    "tcp_pos": p_tcp,
+                    "target_pos": p_ref,
+                    "progress": progress,
+                    "camera_pos": _cam_pos,
+                    "camera_dir": _cam_dir,
+                }
+                if combined_view is not None:
+                    combined_view.push_dashboard(logger.snapshot())
+                    combined_view.push_skeleton(_skel_state)
+                else:
+                    if dashboard is not None:
+                        dashboard.push(logger.snapshot())
+                    if skeleton_view is not None:
+                        skeleton_view.push(_skel_state)
                 steps += 1
                 if traj_t >= time_hist[-1]:
                     wall_t0 = time.time()
@@ -693,6 +721,8 @@ def run_mujoco_viewer(
                 steps += 1
                 t += sim_dt
     finally:
+        if combined_view is not None:
+            combined_view.close()
         if dashboard is not None:
             dashboard.close()
         if skeleton_view is not None:
@@ -720,7 +750,7 @@ def run_mujoco_viewer(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--center", nargs=3, type=float, default=(0.51670, 0.0, 0.5286))
+    parser.add_argument("--center", nargs=3, type=float, default=(0.51000, 0.0, 0.5700))
     parser.add_argument("--radius", type=float, default=0.1200)
     parser.add_argument("--segment-duration", type=float, default=9.0)
     parser.add_argument("--dt", type=float, default=0.01)

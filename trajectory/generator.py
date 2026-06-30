@@ -45,18 +45,18 @@ from trajectory.circle import (
 # Robot workspace centroid is near (0, 0, -0.59) based on DH sampling.
 # The arm reaches ±0.8m in x/y and -1.1 to 0 in z.
 # Pipe/flange placed within robot workspace:
-#   - Pipe along world +x, starting at x=0.42000, ending at x=0.67000
-#   - Flange face at x=0.67000, pipe axis height at z=0.5286
+#   - Pipe along world +x, starting at x=0.56000, ending at x=0.81000
+#   - Flange face at x=0.81000, pipe axis height at z=0.5700
 # Inspection circle in y-z plane (perpendicular to pipe x-axis):
-#   - seam center at (0.67000, 0, 0.5286)
+#   - seam center at (0.81000, 0, 0.5700)
 #   - radius = 0.120 m
 #   - lower support bar exclusion: 270° ± 30° by default
-PIPE_OFFSET_X  = 0.42000  # x-distance from robot base to pipe start (m)
+PIPE_OFFSET_X  = 0.56000  # x-distance from robot base to pipe start (m)
 PIPE_LENGTH    = 0.25   # pipe length (m)
-PIPE_HEIGHT    = 0.5286 # z-height of pipe center axis (m) in z-up world
+PIPE_HEIGHT    = 0.5700 # z-height of pipe center axis (m) in z-up world
 PIPE_OD        = 0.0605  # pipe outer diameter matches the flange bore (m)
 STANDOFF       = 0.120  # camera orbit radius in the y-z plane (m)
-TRAJECTORY_X_OFFSET = -0.1533  # move camera orbit toward robot along world -x (m)
+TRAJECTORY_X_OFFSET = -0.3000  # move camera orbit toward robot along world -x (m)
 N_WAYPOINTS    = 36     # waypoints around 360° (every 10°)
 
 # Derived

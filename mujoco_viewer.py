@@ -83,7 +83,7 @@ IK_SEED          = np.array([0.5, -0.8, 0.0, 1.2, 0.0, 0.8])  # rough inspection
 NDOF = 6
 ROBOT_READY = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571])
 RIGHT_BIASED_READY = np.array([1.50, -0.785, 0.40, -2.356, 0.0, 1.571])
-TRAJECTORY_CENTER = FLANGE_CENTER + np.array([-0.1533, 0.0, 0.0])
+TRAJECTORY_CENTER = FLANGE_CENTER + np.array([-0.3000, 0.0, 0.0])
 TRAJECTORY_RADIUS = 0.1200
 SEAM_TARGET_RADIUS = SEAM_RADIUS
 MULTI_RING_SPECS = DEFAULT_MULTI_RING_SPECS
@@ -766,7 +766,7 @@ def render_inspection_cameras(model, data, Q, traj_info=None, out_dir="inspectio
     cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, camera_name)
     if cam_id < 0:
         print(f"[WARN] camera '{camera_name}' not found in model.")
-        return
+        return False
 
     set_d405_depth_rendering(model, cam_id)
     renderer = mujoco.Renderer(model, height=D405_DEPTH_HEIGHT, width=D405_DEPTH_WIDTH)
@@ -849,6 +849,7 @@ def render_inspection_cameras(model, data, Q, traj_info=None, out_dir="inspectio
             f"min={min(valid_counts)}, max={max(valid_counts)}, "
             f"mean={np.mean(valid_counts):.1f}/{D405_DEPTH_WIDTH * D405_DEPTH_HEIGHT}"
         )
+    return True
 
 
 # ── Interactive viewer ───────────────────────────────────────────────────────
@@ -1528,9 +1529,10 @@ def main():
 
     # ── Camera render ─────────────────────────────────────────────────────
     if args.camera and Q is not None:
-        render_inspection_cameras(model, data, Q, traj_info=traj_info, camera_name=args.camera_name)
+        _cam_ok = render_inspection_cameras(model, data, Q, traj_info=traj_info, camera_name=args.camera_name)
         if not args.camera_viewer:
-            print("[CAM] Camera frames were written to inspection_frames/.")
+            if _cam_ok:
+                print("[CAM] Camera frames were written to inspection_frames/.")
             print("[CAM] Use --camera-viewer if you want an interactive fixed-camera window.")
             return
 

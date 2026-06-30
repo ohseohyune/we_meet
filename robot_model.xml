@@ -144,8 +144,8 @@
       </body>
     </body>
 
-    <!-- Pipe-flange assembly. Pipe axis is world +x; flange face center is (0.55, 0, 0.57). -->
-    <body name="pipe_flange_assembly" pos="0.4250 0.0000 0.5700" euler="0 1.5708 0">
+    <!-- Pipe-flange assembly. Pipe axis is world +x; flange face center is (0.69, 0, 0.57). -->
+    <body name="pipe_flange_assembly" pos="0.5650 0.0000 0.5700" euler="0 1.5708 0">
       <geom name="pipe_outer" type="cylinder" pos="0 0 0" size="0.03025 0.1250" rgba="0.55 0.55 0.60 1" contype="1" conaffinity="1"/>
       <geom name="pipe_bore" type="cylinder" pos="0 0 0" size="0.0271 0.1260" rgba="0.12 0.12 0.12 1"/>
       <geom name="flange_disc" type="cylinder" pos="0 0 0.13775" size="0.0760 0.01275" rgba="0.45 0.50 0.56 1" contype="1" conaffinity="1"/>
