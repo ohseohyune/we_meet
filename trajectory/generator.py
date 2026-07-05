@@ -57,7 +57,7 @@ PIPE_HEIGHT    = 0.5700 # z-height of pipe center axis (m) in z-up world
 PIPE_OD        = 0.0605  # pipe outer diameter matches the flange bore (m)
 STANDOFF       = 0.120  # camera orbit radius in the y-z plane (m)
 TRAJECTORY_X_OFFSET = -0.3000  # move camera orbit toward robot along world -x (m)
-N_WAYPOINTS    = 36     # waypoints around 360° (every 10°)
+N_WAYPOINTS    = 216    # waypoints around 360° (every ~1.7°)
 
 # Derived
 FLANGE_CENTER = np.array([PIPE_OFFSET_X + PIPE_LENGTH, 0.0, PIPE_HEIGHT])

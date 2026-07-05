@@ -50,30 +50,32 @@
       <geom name="column" type="cylinder" fromto="0 0 0.02 0 0 0.0948" size="0.03" rgba="0.3 0.3 0.35 1" />
       <body name="link1" pos="0.000000 0.000000 0.144763" quat="0.002699 0.000000 0.000000 -0.999996">
         <joint name="q1" />
-        <geom name="link1_g" type="capsule" fromto="0 0 0 -0.061099 0.000000 0.132184" size="0.025" rgba="0.85 0.3 0.3 1" />
-        <geom name="j1_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+        <geom name="link1_g" type="capsule" fromto="0 0 0 -0.061099 0.000000 0.132184" size="0.025" rgba="0.85 0.3 0.3 1" contype="2" conaffinity="1" />
+        <geom name="j1_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" contype="2" conaffinity="1" />
         <body name="link2" pos="-0.061099 0.000000 0.132184" quat="0.707799 -0.706413 0.000828 0.000830">
           <joint name="q2" />
-          <geom name="link2_g" type="capsule" fromto="0 0 0 0.345932 0.000000 0.091502" size="0.025" rgba="0.85 0.55 0.2 1" />
-          <geom name="j2_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+          <geom name="link2_g" type="capsule" fromto="0 0 0 0.345932 0.000000 0.091502" size="0.025" rgba="0.85 0.55 0.2 1" contype="2" conaffinity="1" />
+          <geom name="j2_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" contype="2" conaffinity="1" />
           <body name="link3" pos="0.345932 0.000000 0.091502" quat="0.704644 -0.001551 -0.001561 -0.709558">
             <joint name="q3" />
-            <geom name="link3_g" type="capsule" fromto="0 0 0 0.103901 0.000000 0.005000" size="0.025" rgba="0.8 0.8 0.25 1" />
-            <geom name="j3_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+            <geom name="link3_g" type="capsule" fromto="0 0 0 0.103901 0.000000 0.005000" size="0.025" rgba="0.8 0.8 0.25 1" contype="2" conaffinity="1" />
+            <geom name="j3_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" contype="2" conaffinity="1" />
             <body name="link4" pos="0.103901 0.000000 0.005000" quat="0.705697 0.708499 0.003291 -0.003278">
               <joint name="q4" />
-              <geom name="link4_g" type="capsule" fromto="0 0 0 -0.000588 0.000000 0.344628" size="0.025" rgba="0.3 0.75 0.4 1" />
-              <geom name="j4_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+              <geom name="link4_g" type="capsule" fromto="0 0 0 -0.000588 0.000000 0.344628" size="0.025" rgba="0.3 0.75 0.4 1" contype="2" conaffinity="1" />
+              <geom name="j4_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" contype="2" conaffinity="1" />
               <body name="link5" pos="-0.000588 0.000000 0.344628" quat="0.013053 -0.013195 -0.710781 -0.703168">
                 <joint name="q5" />
-                <geom name="link5_g" type="capsule" fromto="0 0 0 0.074472 0.000000 -0.024818" size="0.025" rgba="0.3 0.6 0.85 1" />
-                <geom name="j5_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+                <geom name="link5_g" type="capsule" fromto="0 0 0 0.074472 0.000000 -0.024818" size="0.025" rgba="0.3 0.6 0.85 1" contype="2" conaffinity="1" />
+                <geom name="j5_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" contype="2" conaffinity="1" />
                 <body name="link6" pos="0.074472 0.000000 -0.024818" quat="0.501595 -0.493208 0.498313 0.506787">
                   <joint name="q6" />
-                  <geom name="link6_g" type="capsule" fromto="0 0 0 0.070882 -0.244194 0.030304" size="0.025" rgba="0.6 0.4 0.85 1" />
-                  <geom name="j6_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" />
+                  <geom name="link6_g" type="capsule" fromto="0 0 0 0.070882 -0.244194 0.030304" size="0.008" rgba="0.6 0.4 0.85 1" contype="0" conaffinity="0" />
+                  <geom name="j6_g" type="cylinder" size="0.04 0.03" rgba="0.12 0.12 0.12 1" contype="0" conaffinity="0" />
                   <body name="ee" pos="0.070882 -0.244194 0.030304" quat="0.724562 -0.689210 0.000000 0.000000">
                     <site name="tcp" size="0.004" rgba="1 0 0 1" />
+                    <geom name="torch_g" type="capsule" fromto="0 0 0 0.01384 -0.00829 -0.04733" size="0.004" rgba="0.95 0.55 0.05 1" contype="0" conaffinity="0" />
+                    <site name="torch_tip" pos="0.01384 -0.00829 -0.04733" size="0.004" rgba="1 0.5 0 1" />
                     <body name="d405_mount" pos="-0.03667 0.00798 0.05980" quat="0.68961 0.06423 -0.13501 -0.70858">
                       <inertial pos="0 0 0" mass="0.05" diaginertia="1e-5 1e-5 1e-5" />
                       <site name="camera_optical_center" pos="0 0 0" size="0.010" rgba="1 0.6 0 0.9" />
@@ -87,10 +89,10 @@
         </body>
       </body>
     </body>
-  <body name="pipe_flange_assembly" pos="0.5650 0.0000 0.5700" euler="0 1.5708 0">
+  <body name="pipe_flange_assembly" pos="0.6500 0.0000 0.5700" euler="0 1.5708 0">
       <geom name="pipe_outer" type="cylinder" pos="0 0 0" size="0.03025 0.1250" rgba="0.55 0.55 0.60 1" contype="1" conaffinity="1" />
       <geom name="pipe_bore" type="cylinder" pos="0 0 0" size="0.0271 0.1260" rgba="0.12 0.12 0.12 1" />
-      <geom name="flange_disc" type="cylinder" pos="0 0 0.13775" size="0.0760 0.01275" rgba="0.45 0.50 0.56 1" contype="1" conaffinity="1" />
+      <geom name="flange_disc" type="cylinder" pos="0 0 0.13775" size="0.0760 0.01275" rgba="0.45 0.50 0.56 1" contype="0" conaffinity="0" />
       <geom name="flange_bore" type="cylinder" pos="0 0 0.13775" size="0.03025 0.01375" rgba="0.11 0.11 0.11 1" />
       <geom name="raised_face" type="cylinder" pos="0 0 0.1515" size="0.0502 0.0010" rgba="0.62 0.64 0.67 1" />
       <geom name="raised_bore" type="cylinder" pos="0 0 0.1515" size="0.03025 0.0015" rgba="0.10 0.10 0.10 1" />
@@ -121,11 +123,11 @@
          Stand column at X=0.5650, extending X=0.532..0.598 — entirely behind
          the camera orbit plane at X=0.510, so zero trajectory interference.
          V-saddle arms (±40 deg) cradle the pipe from below. -->
-    <body name="pipe_supporter" pos="0.5650 0.0000 0.0000">
-      <geom name="supp_base"  type="box" pos="0 0 0.009"        size="0.075 0.055 0.009"  rgba="0.30 0.32 0.36 1" contype="1" conaffinity="1"/>
-      <geom name="supp_col"   type="box" pos="0 0 0.267"        size="0.033 0.018 0.258"  rgba="0.30 0.32 0.36 1" contype="1" conaffinity="1"/>
-      <geom name="supp_arm_l" type="box" pos="0 -0.024 0.534"   size="0.033 0.005 0.016"  euler="-40 0 0" rgba="0.30 0.32 0.36 1" contype="1" conaffinity="1"/>
-      <geom name="supp_arm_r" type="box" pos="0  0.024 0.534"   size="0.033 0.005 0.016"  euler=" 40 0 0" rgba="0.30 0.32 0.36 1" contype="1" conaffinity="1"/>
+    <body name="pipe_supporter" pos="0.6500 0.0000 0.0000">
+      <geom name="supp_base"  type="box" pos="0 0 0.009"        size="0.075 0.055 0.009"  rgba="0.30 0.32 0.36 1" contype="0" conaffinity="0"/>
+      <geom name="supp_col"   type="box" pos="0 0 0.267"        size="0.033 0.018 0.258"  rgba="0.30 0.32 0.36 1" contype="0" conaffinity="0"/>
+      <geom name="supp_arm_l" type="box" pos="0 -0.024 0.534"   size="0.033 0.005 0.016"  euler="-40 0 0" rgba="0.30 0.32 0.36 1" contype="0" conaffinity="0"/>
+      <geom name="supp_arm_r" type="box" pos="0  0.024 0.534"   size="0.033 0.005 0.016"  euler=" 40 0 0" rgba="0.30 0.32 0.36 1" contype="0" conaffinity="0"/>
     </body>
 
     <body name="traj_markers" pos="0 0 0">

@@ -49,6 +49,7 @@ from trajectory.generator import (
     FLANGE_CENTER, SEAM_RADIUS, STANDOFF,
     PIPE_OFFSET_X, PIPE_LENGTH, PIPE_HEIGHT,
     print_waypoints, rot_to_quat, look_at_rotation, make_pose,
+    generate_waypoints, seam_target_position,
 )
 from trajectory.circle import (
     DEFAULT_MULTI_RING_SPECS,
@@ -83,6 +84,15 @@ IK_SEED          = np.array([0.5, -0.8, 0.0, 1.2, 0.0, 0.8])  # rough inspection
 NDOF = 6
 ROBOT_READY = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571])
 RIGHT_BIASED_READY = np.array([1.50, -0.785, 0.40, -2.356, 0.0, 1.571])
+# Weld-specific seed: wrist branch with ample j4 margin (old seed had q4=-3.142, at the
+# -pi limit, forcing a 3.6 rad branch flip near phi 64°).
+# Derived from IK solution at phi=63.0° with pipe at x=0.8475 (1.5x distance).
+WELD_BIASED_READY = np.array([0.295, -2.541, 2.804, 0.558, 1.321, -1.237])
+# Left-half (via 9 o'clock) seed: the right-half branch dies just past 12 o'clock
+# (j4 limit), so the left half needs its own wrist branch. Seeding seg3 with it pins
+# the single unavoidable branch change at the 12 o'clock pass boundary instead of
+# mid-seam. Derived from IK solution at phi=189° with pipe at x=0.6500.
+WELD_LEFT_HALF_SEED = np.array([-0.275, -2.039, 1.972, -2.652, 2.228, -1.123])
 TRAJECTORY_CENTER = FLANGE_CENTER + np.array([-0.3000, 0.0, 0.0])
 TRAJECTORY_RADIUS = 0.1200
 SEAM_TARGET_RADIUS = SEAM_RADIUS
@@ -91,7 +101,7 @@ USE_FEASIBLE_CAPTURE_ARCS = False
 PLAYBACK_CAPTURE_ONLY = False
 SEGMENT_DURATION = 9.0
 TRAJECTORY_DT = 0.02
-IK_WAYPOINTS = 36
+IK_WAYPOINTS = 216
 APPROACH_DURATION = 9.0
 MAX_JOINT_SPEED = 0.85
 PLAYBACK_MAX_JOINT_ACCEL = 4.00
@@ -137,6 +147,26 @@ RIGHT_POSTURE_SEGMENT_WEIGHTS = {
     3: 0.25,
     4: 0.20,
 }
+# ── Welding IK constants ──────────────────────────────────────────────────────
+WELD_LOOK_AXIS_COL  = 2      # EE +Z = torch direction
+WELD_LOOK_AXIS_SIGN = 1.0    # torch +Z points toward weld (inspection uses -1.0)
+WELD_DEFAULT_RETRIES = 16    # tcp site는 camera site보다 workspace 제약이 강해 더 많은 retry 필요
+# 위쪽에서 용접: 팔을 +Z(위) 방향으로 편향 (상단 반원 궤적과 함께 사용)
+WELD_ABOVE_POSTURE_BIAS = {
+    "q_ref": WELD_BIASED_READY,
+    "body_names": ("link4", "link5", "link6", "ee"),
+    "side_axis": 2,      # Z축 기준
+    "side_sign": 1.0,    # +Z 위쪽으로 팔 편향
+    "side_margin": 0.10,
+    "q_weight": 0.05,
+    "body_weight": 0.22,
+}
+_VIEWER_ROOT = os.path.dirname(os.path.abspath(__file__))
+# PLY 캡처 당시의 pipe_flange_assembly 위치 — seam 정합 기준점.
+WELD_PLY_CAPTURE_PIPE_POS = np.array([0.5650, 0.0, 0.5700])
+WELD_PLY_PATH = os.path.join(_VIEWER_ROOT, "inspection_frames", "output",
+                              "reconstructed_pointcloud.ply")
+
 SHOW_TRAJECTORY_MARKERS = False
 TRAJECTORY_MARKER_RGBA = np.array([0.0, 0.85, 1.0, 1.0])
 TRAJECTORY_MARKER_SIZE = 0.014
@@ -228,40 +258,26 @@ def generate_segmented_reference(
     multi_ring=False,
     return_info=False,
 ):
-    """Generate the requested top-bottom-top-bottom-top segmented seam trajectory."""
-    if multi_ring:
-        traj = multi_ring_segmented_trajectory(
-            seam_center=FLANGE_CENTER,
-            ring_specs=MULTI_RING_SPECS,
-            segment_duration=SEGMENT_DURATION,
-            dt=TRAJECTORY_DT,
-            target_radius=SEAM_TARGET_RADIUS,
-            feasible_only=USE_FEASIBLE_CAPTURE_ARCS,
-        )
-    else:
-        traj = segmented_circle_trajectory(
-            center=TRAJECTORY_CENTER,
-            radius=TRAJECTORY_RADIUS,
-            segment_duration=SEGMENT_DURATION,
-            dt=TRAJECTORY_DT,
-            orientation_target=FLANGE_CENTER,
-            target_radius=SEAM_TARGET_RADIUS,
-            feasible_only=USE_FEASIBLE_CAPTURE_ARCS,
-        )
-    traj = _sample_trajectory(traj, max_waypoints)
-    time_values = traj["time"]
-    angles = traj["angles"]
-    positions = traj["positions"]
-    targets = traj["targets"]
+    """Generate uniform-density circular inspection trajectory.
 
-    poses = traj["poses"]
-    rotations = [pose[:3, :3] for pose in poses]
+    circle.py의 quintic-spline segmented 방식은 모든 segment가 phi=90°(12시)에서
+    시작·종료하므로 해당 구간에 프레임이 과밀하게 집중되어 reconstruction에서
+    뭉개짐이 발생한다. generator.py의 linspace 기반 균일 샘플링으로 교체한다.
+    """
+    angles, positions, rotations, poses = generate_waypoints(
+        n=max_waypoints,
+        exclude_bottom=True,
+    )
+    n = len(angles)
+    time_values = np.linspace(0.0, (n - 1) * TRAJECTORY_DT, n)
 
     output = [time_values, angles, positions, rotations, poses]
     if return_targets:
+        targets = [seam_target_position(phi) for phi in angles]
         output.append(targets)
     if return_info:
-        output.append(traj)
+        # 단일 segment — right_posture_weights가 segment_id=1 가중치(1.5)를 전체에 적용
+        output.append({"segment_id": np.ones(n, dtype=int)})
     return tuple(output)
 
 
@@ -346,6 +362,11 @@ def draw_inspection_frames(viewer, model, data, show_tcp=True):
     draw_frame_axes(viewer, WORLD_FRAME_ORIGIN, np.eye(3), size=0.12, alpha=0.95, label="World/Base")
 
 
+def draw_weld_trajectory_overlay(viewer, weld_poses, every=3):
+    _clear_viewer_overlay(viewer)
+    draw_frame_axes(viewer, WORLD_FRAME_ORIGIN, np.eye(3), size=0.12, alpha=0.95, label="World/Base")
+
+
 # ── IK and trajectory computation ────────────────────────────────────────────
 
 def camera_poses_to_tcp_poses(camera_poses):
@@ -384,8 +405,14 @@ def max_adjacent_joint_step(Q):
     return float(np.max(np.abs(np.diff(Q, axis=0))))
 
 
-def compute_ik_trajectory(model, data, verbose=True, retries=16, rng_seed=7, max_waypoints=IK_WAYPOINTS):
-    """Compute joint trajectory for the segmented flange inspection path."""
+def compute_ik_trajectory(model, data, verbose=True, retries=16, rng_seed=7, max_waypoints=IK_WAYPOINTS,
+                          origin_shift=None, ik_progress_cb=None):
+    """Compute joint trajectory for the segmented flange inspection path.
+
+    origin_shift: optional (3,) translation applied to the whole reference
+    trajectory (camera positions/poses and look targets). Used when the pipe
+    is moved away from the position the trajectory constants assume.
+    """
     print("\n[IK] Generating inspection trajectory...")
     (
         time_values,
@@ -400,6 +427,20 @@ def compute_ik_trajectory(model, data, verbose=True, retries=16, rng_seed=7, max
         return_targets=True,
         return_info=True,
     )
+
+    if origin_shift is not None:
+        shift = np.asarray(origin_shift, dtype=float).reshape(3)
+        if np.linalg.norm(shift) > 1e-12:
+            camera_positions = np.asarray(camera_positions, dtype=float) + shift
+            look_targets = np.asarray(look_targets, dtype=float) + shift
+            shifted_poses = []
+            for T in camera_poses:
+                T2 = np.array(T, dtype=float, copy=True)
+                T2[:3, 3] += shift
+                shifted_poses.append(T2)
+            camera_poses = shifted_poses
+            print(f"[IK] Reference trajectory shifted by {np.round(shift, 4)} m")
+
     tcp_poses_world = camera_poses_to_tcp_poses(camera_poses)
 
     if verbose:
@@ -436,6 +477,7 @@ def compute_ik_trajectory(model, data, verbose=True, retries=16, rng_seed=7, max
             collision_penalty=collision_penalty,
             collision_margin=COLLISION_MARGIN,
             site_name=CAMERA_SITE_NAME,
+            progress_cb=ik_progress_cb,
         )
 
     def evaluate_candidate(Q_candidate):
@@ -558,6 +600,242 @@ def compute_ik_trajectory(model, data, verbose=True, retries=16, rng_seed=7, max
         )
 
     return Q, flags, time_values, angles, camera_positions, camera_rotations, camera_poses, tcp_poses_world, traj_info
+
+
+def compute_ik_weld_trajectory(
+    model, data,
+    ply_path=None,
+    verbose=True,
+    retries=DEFAULT_IK_RETRIES,
+    rng_seed=7,
+    standoff=None,
+    status_cb=None,
+    progress_cb=None,
+):
+    """Compute joint trajectory for the welding path.
+
+    Seam geometry is extracted from the reconstructed PLY, then weld EE poses
+    are generated and solved with IK.  The torch Z axis (+Z of EE) points toward
+    the weld seam, so axis_sign=+1.0 (opposite of the camera inspection case).
+    """
+    print("\n[IK-WELD] 용접 경로 IK 계산 중...")
+
+    if ply_path is None:
+        ply_path = WELD_PLY_PATH
+    if not os.path.exists(ply_path):
+        raise FileNotFoundError(
+            f"[IK-WELD] PLY 파일을 찾을 수 없습니다: {ply_path}\n"
+            "먼저 mujoco_viewer.py --ik --camera --export-csv --no-viewer 와 "
+            "Reconstruct_3D.py 를 실행하세요."
+        )
+
+    from welding.seam_extraction import extract_seam
+    from welding.weld_trajectory import generate_weld_poses
+    from welding.weld_trajectory import WELD_STANDOFF_M as _STANDOFF
+    from welding.weld_trajectory import WELD_TOOL_LENGTH_M as _TOOL_LEN
+
+    seam = extract_seam(ply_path, verbose=verbose)
+
+    # PLY는 캡처 당시의 파이프 위치 기준. scene의 현재 파이프 위치가 다르면
+    # seam을 그 차이만큼 평행이동해 정합한다. 캡처 위치는 사이드카 JSON이 있으면
+    # 그 값을(UI에서 재스캔한 경우), 없으면 기본 상수를 사용.
+    capture_pipe_pos = WELD_PLY_CAPTURE_PIPE_POS
+    _sidecar = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(ply_path)),
+                                            "..", "capture_pipe_pos.json"))
+    if os.path.isfile(_sidecar):
+        import json as _json
+        with open(_sidecar) as _f:
+            capture_pipe_pos = np.asarray(_json.load(_f)["pipe_pos"], dtype=float)
+    pipe_bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "pipe_flange_assembly")
+    if pipe_bid >= 0:
+        seam_shift = model.body_pos[pipe_bid] - capture_pipe_pos
+        if np.linalg.norm(seam_shift) > 1e-9:
+            seam["center"] = np.asarray(seam["center"], dtype=float) + seam_shift
+            print(f"[IK-WELD] seam을 현재 파이프 위치에 정합: shift={np.round(seam_shift, 4)}")
+
+    _eff_standoff = _STANDOFF if standoff is None else float(standoff)
+    weld_poses_full, angles_full = generate_weld_poses(
+        center=seam["center"],
+        radius=seam["radius"],
+        normal=seam["normal"],
+        exclude_bottom=False,
+        standoff=_eff_standoff,
+    )
+
+    _reach           = _eff_standoff + _TOOL_LEN
+    _torch_tip_in_ee = np.array([0.01384, -0.00829, -0.04733])
+    seam_pts_full    = [T[:3, 3] + _reach * T[:3, 2] for T in weld_poses_full]
+
+    _tcp_sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "tcp")
+    _ee_bid  = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "ee")
+    from control.franka_ik_solver import joint_limits, ARM_JOINT_NAMES
+    _jlimits = joint_limits(model, mujoco)
+    _jnt_ids = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, nm) for nm in ARM_JOINT_NAMES]
+    _dof_idx = np.array([model.jnt_dofadr[i] for i in _jnt_ids], dtype=int)
+
+    weld_posture_bias = dict(WELD_ABOVE_POSTURE_BIAS, q_ref=WELD_BIASED_READY, q_weight=0.05)
+    _ik_base = dict(
+        retries=retries,
+        rng_seed=rng_seed,
+        verbose=verbose,
+        axis_col=WELD_LOOK_AXIS_COL,
+        axis_sign=WELD_LOOK_AXIS_SIGN,
+        posture_bias=weld_posture_bias,
+        continuity_weight=0.18,
+        max_capture_look_deg=15.0,
+        max_capture_pos_err=0.005,
+        invalid_candidate_penalty=0.0,
+        collision_penalty=COLLISION_AVOIDANCE_DEFAULT_PENALTY,
+        collision_margin=0.0,
+        target_rotation_weight=0.3,
+        pose_rotation_scale=np.deg2rad(90.0),
+        site_name=TCP_SITE_NAME,
+    )
+
+    def _newton_correct(Q1_raw, seg_seam):
+        """Pass-2: Newton IK correction so torch_tip lands on seam."""
+        Q1s = np.array(Q1_raw, dtype=float)
+        out = []
+        for q0, sp in zip(Q1s, seg_seam):
+            q = q0.copy()
+            for _ in range(80):
+                set_arm_qpos(model, data, mujoco, q)
+                mujoco.mj_forward(model, data)
+                R_ee = data.xmat[_ee_bid].reshape(3, 3)
+                target_tcp = sp - R_ee @ _torch_tip_in_ee
+                err = target_tcp - data.site_xpos[_tcp_sid]
+                if np.linalg.norm(err) < 1e-4:
+                    break
+                J = np.zeros((3, model.nv))
+                mujoco.mj_jacSite(model, data, J, None, _tcp_sid)
+                J_arm = J[:, _dof_idx]
+                dq = np.linalg.lstsq(
+                    J_arm.T @ J_arm + 1e-6 * np.eye(NDOF),
+                    J_arm.T @ err, rcond=None,
+                )[0]
+                q = np.clip(q + dq, _jlimits[:, 0], _jlimits[:, 1])
+            out.append(q)
+        return out
+
+    def _solve_segment(seg_poses, seg_seam, seg_angles, name, q_start,
+                       wp_offset=0, wp_total=0):
+        sn = len(seg_poses)
+        p1 = []
+        for sp, T in zip(seg_seam, seg_poses):
+            T2 = T.copy()
+            T2[:3, 3] = sp - T[:3, :3] @ _torch_tip_in_ee
+            p1.append(T2)
+        print(f"[IK-WELD] {name}: Pass-1 ({sn} wp)...")
+        _seg_prog = None
+        if progress_cb is not None and wp_total > 0:
+            def _seg_prog(i, n):
+                progress_cb(wp_offset + i, wp_total)
+        Q1, _ = solve_trajectory(
+            model, data, mujoco, p1,
+            q_start=np.asarray(q_start, dtype=float).copy(),
+            look_target=seg_seam,
+            posture_weights=np.ones(sn),
+            progress_cb=_seg_prog,
+            **_ik_base,
+        )
+        Q_seg = _newton_correct(Q1, seg_seam)
+        print(f"[IK-WELD] {name}: done ({sn} wp)")
+        return Q_seg
+
+    # ── 4개 segment: 12시→6시(CW, 3시 경유) → 12시(CCW, 3시 경유)
+    #                → 6시(CCW, 9시 경유) → 12시(CW, 9시 경유)
+    # phi: 0°=3시, 90°=12시, 180°=9시, 270°=6시 (phi 증가 = 반시계)
+    # 모든 segment 경계가 12시/6시 동일 지점에서 만나 위치 불연속이 없다.
+    adeg = np.degrees(angles_full)
+
+    def _range_idx(phi_lo, phi_hi, rev):
+        idx = np.where((adeg >= phi_lo) & (adeg <= phi_hi))[0]
+        return idx[::-1] if rev else idx
+
+    _seg_down_3 = np.concatenate([_range_idx(0, 90, True),
+                                  _range_idx(270, 360, True)])   # 12시→6시 (3시 경유)
+    _seg_down_9 = _range_idx(90, 270, False)                     # 12시→6시 (9시 경유)
+
+    # 복귀 패스는 같은 pose를 역순으로 지나므로 (push angle이 방향 무관하게 동일)
+    # 하강 패스의 IK 해를 미러링해 재사용 — 왕복 간 브랜치 플립을 원천 차단.
+    seg_defs = [
+        (_seg_down_3,        "12시→6시 (CW, 3시)",  None, None),
+        (_seg_down_3[::-1],  "6시→12시 (CCW, 3시)", 0,    None),
+        (_seg_down_9,        "12시→6시 (CCW, 9시)", None, WELD_LEFT_HALF_SEED),
+        (_seg_down_9[::-1],  "6시→12시 (CW, 9시)",  2,    None),
+    ]
+
+    Q_all, angles_all, weld_poses_all, seam_pts_all = [], [], [], []
+    seg_solutions: list[list] = []
+    total_solve_wp = sum(len(idx) for idx, _, mirror_of, _ in seg_defs if mirror_of is None)
+    solved_wp = 0
+    for seg_i, (idx, name, mirror_of, seed_override) in enumerate(seg_defs):
+        if len(idx) == 0:
+            seg_solutions.append([])
+            continue
+        if status_cb is not None:
+            status_cb(name, seg_i + 1, len(seg_defs))
+        sp   = [seam_pts_full[i]  for i in idx]
+        wp   = [weld_poses_full[i] for i in idx]
+        ang  = angles_full[idx]
+        if mirror_of is not None:
+            Q_seg = list(seg_solutions[mirror_of])[::-1]
+            print(f"[IK-WELD] {name}: 미러 재사용 ({len(Q_seg)} wp)")
+        else:
+            # 시드 우선순위: segment 전용 시드 > 이전 segment 마지막 해(warm-start) > 기본
+            if seed_override is not None:
+                q_seed = seed_override
+            else:
+                q_seed = Q_all[-1] if Q_all else WELD_BIASED_READY
+            Q_seg = _solve_segment(wp, sp, ang, name, q_seed,
+                                   wp_offset=solved_wp, wp_total=total_solve_wp)
+            solved_wp += len(idx)
+        seg_solutions.append(Q_seg)
+        Q_all.extend(Q_seg)
+        angles_all.extend(ang.tolist())
+        weld_poses_all.extend(wp)
+        seam_pts_all.extend(sp)
+
+    Q          = Q_all
+    angles     = np.array(angles_all)
+    weld_poses = weld_poses_all
+    seam_pts   = seam_pts_all
+    flags      = [True] * len(Q)
+    positions  = np.array([sp - T[:3, :3] @ _torch_tip_in_ee
+                           for sp, T in zip(seam_pts, weld_poses)])
+    n = len(Q)
+
+    time_values = np.linspace(0.0, (n - 1) * TRAJECTORY_DT, n)
+    orig_dur = float(time_values[-1] - time_values[0]) if n > 1 else 0.0
+    time_values = retime_joint_trajectory(time_values, Q, max_joint_speed=MAX_JOINT_SPEED)
+    new_dur = float(time_values[-1] - time_values[0]) if n > 1 else 0.0
+    if new_dur > orig_dur + 1e-6:
+        print(f"[IK-WELD] 속도 제한 재타이밍: {orig_dur:.2f}s → {new_dur:.2f}s")
+
+    n_ok = int(np.count_nonzero(flags))
+    print(f"[IK-WELD] IK 성공 (필터 후): {n_ok}/{n}")
+
+    # ── 충돌 진단 ────────────────────────────────────────────────────────────
+    col_metrics = evaluate_collision_trajectory(model, data, mujoco, Q, collision_margin=0.0)
+    col_counts = col_metrics["collision_count"]
+    col_dists  = col_metrics["min_contact_dist"]
+    col_pairs  = col_metrics["contacts"]
+    n_col = int(np.sum(col_counts > 0))
+    print(f"[IK-WELD] 충돌 waypoints: {n_col}/{n}", end="")
+    if n_col > 0:
+        finite_dists = col_dists[np.isfinite(col_dists)]
+        worst_dist = float(np.min(finite_dists)) if len(finite_dists) else float("inf")
+        print(f"  (최대 관통 깊이: {-worst_dist*1000:.1f} mm)")
+        print("[IK-WELD] 충돌 waypoint 상세 (phi, 링크):")
+        for i, (cnt, pairs) in enumerate(zip(col_counts, col_pairs)):
+            if cnt > 0:
+                phi_deg = float(np.degrees(angles[i]))
+                pair_str = ", ".join(f"{p['geom1']}↔{p['geom2']}" for p in pairs[:2])
+                print(f"  WP{i+1:3d} phi={phi_deg:6.1f}°  {pair_str}")
+    else:
+        print("  (충돌 없음)")
+
+    return Q, flags, time_values, angles, positions, weld_poses, seam
 
 
 # ── FK verification ──────────────────────────────────────────────────────────
@@ -758,8 +1036,13 @@ def set_d405_depth_rendering(model, cam_id):
     model.cam_fovy[cam_id] = D405_VERTICAL_FOV_DEG
 
 
-def render_inspection_cameras(model, data, Q, traj_info=None, out_dir="inspection_frames", camera_name="d405_camera"):
-    """Render D405-style metric depth maps from the selected fixed camera."""
+def render_inspection_cameras(model, data, Q, traj_info=None, out_dir="inspection_frames", camera_name="d405_camera",
+                              progress_cb=None):
+    """Render D405-style metric depth maps from the selected fixed camera.
+
+    progress_cb: optional callable(i, n) invoked after each rendered waypoint;
+    returning False aborts the capture (used by the control UI / E-STOP).
+    """
     if not MUJOCO_AVAILABLE:
         return
     os.makedirs(out_dir, exist_ok=True)
@@ -828,6 +1111,10 @@ def render_inspection_cameras(model, data, Q, traj_info=None, out_dir="inspectio
                 f"(look={capture_look_deg[i]:.1f}deg, pos={capture_pos_err[i]*1000.0:.1f}mm)"
             )
         output_i += 1
+        if progress_cb is not None and progress_cb(i + 1, len(Q)) is False:
+            renderer.close()
+            print("[CAM] Capture aborted by progress callback (E-STOP).")
+            return False
 
     renderer.close()
     print(f"[CAM] Saved metric depth arrays: {depth_dir}/frame_*.npy")
@@ -1304,6 +1591,7 @@ def run_interactive(
     approach_duration=APPROACH_DURATION,
     fixed_camera_name=None,
     show_frames=True,
+    overlay_poses=None,
 ):
     """Launch interactive MuJoCo viewer, optionally animating trajectory."""
     if not MUJOCO_AVAILABLE:
@@ -1380,7 +1668,10 @@ def run_interactive(
                 set_arm_qpos(model, data, mujoco, q)
 
             if show_frames:
-                draw_inspection_frames(viewer, model, data, show_tcp=True)
+                if overlay_poses is not None:
+                    draw_weld_trajectory_overlay(viewer, overlay_poses)
+                else:
+                    draw_inspection_frames(viewer, model, data, show_tcp=True)
 
             viewer.sync()
             time.sleep(0.002)
@@ -1417,6 +1708,8 @@ def main():
     parser.add_argument("--show-trajectory", action="store_true",
                         help="Show reference trajectory circle markers in the viewer")
     parser.add_argument("--quiet-ik", action="store_true", help="Suppress per-waypoint IK logs")
+    parser.add_argument("--weld", action="store_true",
+                        help="용접 경로 IK 계산 및 MuJoCo 시뮬레이션 (seam 추출 → weld IK → viewer)")
     parser.add_argument("--collision-avoidance", action="store_true",
                         help="Run a slower second collision-aware IK candidate solve")
     parser.add_argument("--no-collision-avoidance", action="store_true",
@@ -1461,12 +1754,24 @@ def main():
     playback_Q = None
     playback_time_values = None
     traj_info = None
+    weld_poses = None
 
     # ── IK computation ───────────────────────────────────────────────────
-    if not (args.ik or args.camera or args.camera_viewer or args.verify or args.export_csv or args.no_viewer or args.joint_log or args.joint_log_full or args.collision_log):
+    if not (args.ik or args.weld or args.camera or args.camera_viewer or args.verify or args.export_csv or args.no_viewer or args.joint_log or args.joint_log_full or args.collision_log):
         args.ik = True
 
-    if args.ik or args.camera or args.camera_viewer or args.verify or args.export_csv or args.joint_log or args.joint_log_full or args.collision_log:
+    rotations = None
+    if args.weld:
+        Q, flags, time_values, angles, positions, weld_poses, _seam = compute_ik_weld_trajectory(
+            model, data,
+            verbose=not args.quiet_ik,
+            retries=max(args.retries, WELD_DEFAULT_RETRIES),
+            rng_seed=args.rng_seed,
+        )
+        camera_poses = weld_poses
+        tcp_poses = weld_poses
+        traj_info = None
+    elif args.ik or args.camera or args.camera_viewer or args.verify or args.export_csv or args.joint_log or args.joint_log_full or args.collision_log:
         Q, flags, time_values, angles, positions, rotations, camera_poses, tcp_poses, traj_info = compute_ik_trajectory(
             model,
             data,
@@ -1477,16 +1782,26 @@ def main():
         )
 
     if Q is not None and not args.no_viewer:
-        playback_Q, playback_time_values, _ = build_capture_playback_trajectory(
-            model,
-            data,
-            Q,
-            time_values,
-            traj_info=traj_info,
-            playback_waypoints=args.playback_waypoints,
-            retries=min(args.retries, PLAYBACK_CARTESIAN_RETRIES),
-            rng_seed=args.rng_seed + 101,
-        )
+        if args.weld:
+            # For welding, skip inspection-circle Cartesian playback and use
+            # joint-space densification directly.
+            playback_Q = _densify_joint_path(Q)
+            playback_time_values = _retime_playback_path(playback_Q)
+            print(
+                f"[VIEWER-WELD] 관절공간 보간 플레이백: "
+                f"{len(Q)} IK → {len(playback_Q)} samples"
+            )
+        else:
+            playback_Q, playback_time_values, _ = build_capture_playback_trajectory(
+                model,
+                data,
+                Q,
+                time_values,
+                traj_info=traj_info,
+                playback_waypoints=args.playback_waypoints,
+                retries=min(args.retries, PLAYBACK_CARTESIAN_RETRIES),
+                rng_seed=args.rng_seed + 101,
+            )
 
     if Q is not None:
         if args.joint_log or args.joint_log_full:
@@ -1552,6 +1867,7 @@ def main():
         approach_duration=args.approach_duration,
         fixed_camera_name=args.camera_name if args.camera_viewer else None,
         show_frames=not args.hide_frames,
+        overlay_poses=weld_poses if args.weld else None,
     )
 
 

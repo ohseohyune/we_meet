@@ -780,8 +780,13 @@ def _solve_trajectory_path_dp(
     invalid_candidate_penalty,
     collision_penalty,
     collision_margin,
+    progress_cb=None,
 ):
-    """Generate per-waypoint IK candidates, then choose the smoothest path."""
+    """Generate per-waypoint IK candidates, then choose the smoothest path.
+
+    progress_cb: optional callable(i, n) invoked after each waypoint's
+    candidate generation (the dominant cost) for progress reporting.
+    """
     limits = joint_limits(model, mujoco_module)
     qidx = joint_qpos_indices(model, mujoco_module)
     ndof = len(limits)
@@ -956,6 +961,9 @@ def _solve_trajectory_path_dp(
             for candidate in ranked
         ]
         anchor_q = ranked[int(np.argmin(anchor_costs))]["q"].copy()
+
+        if progress_cb is not None:
+            progress_cb(i + 1, len(tcp_poses))
 
         if verbose:
             best = ranked[int(np.argmin([candidate["node_cost"] for candidate in ranked]))]
@@ -1147,6 +1155,7 @@ def solve_trajectory(
     invalid_candidate_penalty=1.0e6,
     collision_penalty=0.0,
     collision_margin=0.0,
+    progress_cb=None,
 ):
     rng = np.random.default_rng(rng_seed)
     limits = joint_limits(model, mujoco_module)
@@ -1260,6 +1269,7 @@ def solve_trajectory(
             invalid_candidate_penalty,
             collision_penalty,
             collision_margin,
+            progress_cb=progress_cb,
         )
 
     for i, (T, target_i) in enumerate(zip(tcp_poses, look_targets)):
@@ -1440,6 +1450,9 @@ def solve_trajectory(
         if best_collision["count"] > 0:
             flags[-1] = False
         q = best_q.copy()
+
+        if progress_cb is not None:
+            progress_cb(i + 1, len(tcp_poses))
 
         if verbose:
             status = "OK  " if best_ok else "FAIL"

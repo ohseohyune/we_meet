@@ -14,6 +14,12 @@ BOTTOM_FORBIDDEN_HALF_ANGLE = np.deg2rad(30.0)
 BOTTOM_LEFT_LIMIT = 3.0 * np.pi / 2.0 - BOTTOM_FORBIDDEN_HALF_ANGLE
 BOTTOM_RIGHT_LIMIT = -np.pi / 2.0 + BOTTOM_FORBIDDEN_HALF_ANGLE
 
+# Scene geometry (must match trajectory/generator.py)
+_PIPE_OFFSET_X = 0.56000
+_PIPE_LENGTH   = 0.25
+_PIPE_HEIGHT   = 0.5700
+_PIPE_MID      = np.array([_PIPE_OFFSET_X + _PIPE_LENGTH / 2, 0.0, _PIPE_HEIGHT])
+_FLANGE_CENTER = np.array([_PIPE_OFFSET_X + _PIPE_LENGTH,     0.0, _PIPE_HEIGHT])
 
 SEGMENTS = (
     {
@@ -105,22 +111,28 @@ FEASIBLE_CAPTURE_SEGMENTS = (
 
 DEFAULT_MULTI_RING_SPECS = (
     {
-        "name": "near_oblique",
-        "description": "closer oblique view of the seam",
-        "x_offset": -0.3000,
+        # 플랜지 정면 — 기본 거리에서 용접 심 촬영
+        "name": "flange_face",
+        "description": "standard flange face view at working distance",
+        "x_offset": -0.25,
         "radius": 0.120,
+        # look_at / center 없으면 seam_center(플랜지 정면) 사용
     },
     {
-        "name": "nominal",
-        "description": "nominal inspection view",
-        "x_offset": -0.3000,
-        "radius": 0.120,
+        # 경사 근접 — 카메라가 훨씬 가까이 들어가 플랜지 두께·엣지가 보이는 각도
+        "name": "oblique_near",
+        "description": "steep oblique view revealing flange thickness and edge",
+        "x_offset": -0.08,
+        "radius": 0.150,
     },
     {
-        "name": "far_oblique",
-        "description": "farther oblique view for depth fusion overlap",
-        "x_offset": -0.3000,
-        "radius": 0.120,
+        # 파이프 몸통 — 파이프 중간 지점을 중심으로 공전, 원통면 촬영
+        "name": "pipe_body",
+        "description": "orbit around pipe midpoint to capture cylindrical surface",
+        "center": _PIPE_MID,   # 플랜지 기준 오프셋이 아닌 절대 중심
+        "look_at": _PIPE_MID,  # 파이프 축 방향을 바라봄 (플랜지 정면 아님)
+        "radius": 0.150,
+        "target_radius": 0.03025,
     },
 )
 
@@ -374,16 +386,30 @@ def multi_ring_segmented_trajectory(
 
     time_offset = 0.0
     for ring_index, ring in enumerate(ring_specs, start=1):
-        x_offset = float(ring["x_offset"])
         radius = float(ring["radius"])
-        center = seam_center + np.array([x_offset, 0.0, 0.0])
+
+        # 링별 공전 중심: "center" 키가 있으면 절대 좌표, 없으면 seam_center + x_offset
+        if "center" in ring and ring["center"] is not None:
+            center = np.asarray(ring["center"], dtype=float).reshape(3)
+        else:
+            x_offset = float(ring["x_offset"])
+            center = seam_center + np.array([x_offset, 0.0, 0.0])
+
+        # 링별 시선 방향: "look_at" 키가 있으면 그 점을, 없으면 seam_center
+        if "look_at" in ring and ring["look_at"] is not None:
+            ring_look_at = np.asarray(ring["look_at"], dtype=float).reshape(3)
+        else:
+            ring_look_at = seam_center
+
+        ring_target_radius = float(ring.get("target_radius", target_radius))
+
         traj = segmented_circle_trajectory(
             center=center,
             radius=radius,
             segment_duration=segment_duration,
             dt=dt,
-            orientation_target=seam_center,
-            target_radius=target_radius,
+            orientation_target=ring_look_at,
+            target_radius=ring_target_radius,
             feasible_only=feasible_only,
         )
 

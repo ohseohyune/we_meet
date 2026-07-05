@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weld Control System</title>
+<style>
+  :root { --blue: #3182F7; --ink: #3A3A3A; --paper: #FFFFFF; }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--paper); color: var(--ink); min-height: 100vh;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 24px 20px;
+  }
+  .app { width: 100%; max-width: 1180px; display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+  @media (max-width: 900px) { .app { grid-template-columns: 1fr; } }
+
+  /* ── 공통 블록 ── */
+  .blk { background: var(--paper); border: 2px solid var(--ink); position: relative; }
+  .blk-tag {
+    position: absolute; top: -11px; left: 12px; background: var(--paper);
+    padding: 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 2px;
+  }
+  .blk-tag .sub { font-weight: 400; letter-spacing: 1px; }
+
+  header {
+    grid-column: 1 / -1; display: flex; align-items: center;
+    justify-content: space-between; padding-bottom: 4px;
+  }
+  header h1 { font-size: 18px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; }
+  header h1::before {
+    content: ""; display: inline-block; width: 14px; height: 14px;
+    background: var(--blue); margin-right: 10px;
+  }
+  header .rev { font-size: 10px; letter-spacing: 1px; margin-top: 3px; }
+
+  /* ── E-STOP ── */
+  #estop {
+    background: var(--paper); color: var(--ink); border: 3px solid var(--ink);
+    font-family: inherit; font-size: 15px; font-weight: 800; letter-spacing: 2px;
+    padding: 12px 26px; cursor: pointer; position: relative; overflow: hidden;
+  }
+  #estop .fill {
+    position: absolute; inset: 0; background: var(--ink);
+    transform: scaleX(0); transform-origin: left; pointer-events: none;
+  }
+  #estop.holding .fill { transform: scaleX(1); transition: transform .5s linear; }
+  #estop .lbl { position: relative; z-index: 1; }
+  #estop.holding .lbl { color: var(--paper); }
+  #estop small { display: block; font-size: 9px; font-weight: 400; letter-spacing: 1px; }
+
+  /* ── Phase: 신호 흐름 다이어그램 ── */
+  .phases {
+    grid-column: 1 / -1; display: flex; align-items: center;
+    border: 2px solid var(--ink); padding: 18px 24px; gap: 0; margin-top: 8px;
+  }
+  .phase {
+    border: 2px solid var(--ink); padding: 10px 22px; text-align: center;
+    font-size: 13px; font-weight: 700; letter-spacing: 2px; flex: 0 0 auto;
+    background: var(--paper); color: var(--ink);
+  }
+  .phase.pending { border-style: dashed; opacity: .35; }
+  .phase.active { background: var(--blue); border-color: var(--blue); color: var(--paper); }
+  .phase.done { background: var(--ink); color: var(--paper); }
+  .phase .num { display: block; font-size: 9px; font-weight: 400; letter-spacing: 1px; margin-bottom: 2px; }
+  .flow { flex: 1 1 0; height: 2px; background: var(--ink); position: relative; min-width: 28px; opacity: .35; }
+  .flow::after {
+    content: ""; position: absolute; right: -1px; top: -5px;
+    border-left: 9px solid var(--ink); border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+  }
+  .flow.live { background: var(--blue); opacity: 1; }
+  .flow.live::after { border-left-color: var(--blue); }
+
+  /* ── Viewport = PLANT ── */
+  .left { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  .viewport { aspect-ratio: 4 / 3; margin-top: 10px; }
+  .viewport img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .status-strip {
+    position: absolute; left: -2px; bottom: -2px; right: -2px;
+    background: var(--paper); border: 2px solid var(--ink);
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  }
+  .status-strip .led {
+    width: 10px; height: 10px; background: var(--ink); flex: 0 0 auto; opacity: .25;
+  }
+  .status-strip.running .led { background: var(--blue); opacity: 1; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  #status { font-size: 12.5px; font-weight: 600; letter-spacing: .3px; flex: 1; }
+  .pwrap { flex: 0 0 160px; height: 10px; border: 1px solid var(--ink); }
+  .pwrap > div { height: 100%; width: 0%; background: var(--blue); transition: width .2s; }
+
+  .subpanels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .tile { padding: 12px; padding-top: 16px; display: none; margin-top: 10px; }
+  .tile.show { display: block; }
+  .tile img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; border: 1px solid var(--ink); background: var(--paper); }
+  .tile .cap { font-size: 11px; margin-top: 8px; letter-spacing: .3px; }
+
+  /* ── Monitor (스켈레톤 + 관절/오차 플롯) ── */
+  .monrow { display: grid; grid-template-columns: 230px 1fr; gap: 10px; }
+  @media (max-width: 700px) { .monrow { grid-template-columns: 1fr; } }
+  .jgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .jgrid canvas, #ec, #sk { width: 100%; display: block; border: 1px solid var(--ink); background: var(--paper); }
+  .jgrid canvas { height: 72px; }
+  #sk { height: 154px; }
+  #ec { height: 96px; margin-top: 10px; }
+
+  /* ── 우측 컬럼 ── */
+  .col { display: flex; flex-direction: column; gap: 20px; }
+  .card { padding: 18px; padding-top: 22px; margin-top: 10px; }
+
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .act {
+    border: 2px solid var(--ink); background: var(--paper); color: var(--ink);
+    font-family: inherit; padding: 13px 8px; cursor: pointer; text-align: center;
+  }
+  .act:disabled { opacity: .3; cursor: default; border-style: dashed; }
+  .act .t { font-size: 14px; font-weight: 800; letter-spacing: 2px; }
+  .act .d { font-size: 10px; margin-top: 4px; line-height: 1.4; letter-spacing: .2px; }
+  .act.primary { background: var(--blue); border-color: var(--blue); color: var(--paper); }
+  .act:active:not(:disabled) { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .seamline { font-size: 11.5px; margin-top: 12px; letter-spacing: .3px; }
+  .seamline b { font-weight: 800; }
+
+  /* ── 파라미터 ── */
+  .param + .param { margin-top: 18px; }
+  .param .name { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px; }
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider-row .val {
+    min-width: 70px; text-align: center; font-size: 13px; font-weight: 800;
+    border: 2px solid var(--blue); color: var(--blue); padding: 4px 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .stepbtn {
+    width: 30px; height: 30px; border: 2px solid var(--ink); background: var(--paper);
+    color: var(--ink); font-size: 15px; font-weight: 800; cursor: pointer; flex: 0 0 auto;
+    font-family: inherit;
+  }
+  .stepbtn:active { background: var(--ink); color: var(--paper); }
+  input[type=range] { flex: 1; accent-color: var(--blue); height: 28px; cursor: pointer; }
+  .sub { font-size: 10px; margin-top: 5px; letter-spacing: .2px; opacity: .75; }
+
+  /* ── Segments ── */
+  .pills { display: flex; gap: 0; align-items: center; }
+  .pill {
+    flex: 1 1 0; text-align: center; padding: 8px 2px; border: 2px solid var(--ink);
+    font-size: 10.5px; font-weight: 700; letter-spacing: .5px; white-space: nowrap;
+    background: var(--paper); color: var(--ink);
+  }
+  .pill + .pill { margin-left: -2px; }
+  .pill.pending { border-style: dashed; opacity: .35; }
+  .pill.active { background: var(--blue); border-color: var(--blue); color: var(--paper); position: relative; z-index: 1; }
+  .pill.done { background: var(--ink); color: var(--paper); }
+
+  /* ── Tip error ── */
+  .tip { display: flex; gap: 10px; margin-top: 14px; }
+  .tipbox { flex: 1; border: 2px solid var(--ink); padding: 10px; text-align: center; }
+  .tipbox .k { font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; }
+  .tipbox .v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .tipbox .st { font-size: 9px; font-weight: 700; letter-spacing: 1px; margin-top: 2px; min-height: 11px; }
+  .tipbox.warn { border-color: var(--blue); }
+  .tipbox.warn .st { color: var(--blue); }
+  .tipbox.bad { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--ink); color: var(--paper); padding: 12px 24px;
+    font-weight: 700; font-size: 13px; letter-spacing: 1px;
+    opacity: 0; transition: all .3s; pointer-events: none; border: 2px solid var(--ink);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div>
+      <h1>Weld Control System</h1>
+      <div class="rev">MUJOCO PIPE-FLANGE WELDING · SCAN → RECONSTRUCT → WELD</div>
+    </div>
+    <button id="estop"><span class="fill"></span><span class="lbl">E-STOP<small>HOLD 0.5s</small></span></button>
+  </header>
+
+  <div class="phases" id="phases">
+    <div class="phase" data-p="scan"><span class="num">01</span>SCAN</div>
+    <div class="flow" data-b="scan"></div>
+    <div class="phase" data-p="build"><span class="num">02</span>RECONSTRUCT</div>
+    <div class="flow" data-b="build"></div>
+    <div class="phase" data-p="weld"><span class="num">03</span>WELD</div>
+  </div>
+
+  <div class="left">
+    <div class="blk viewport">
+      <div class="blk-tag">PLANT <span class="sub">· MUJOCO SIM</span></div>
+      <img src="/stream" alt="simulation">
+      <div class="status-strip" id="statusstrip">
+        <div class="led"></div>
+        <div id="status">연결 중…</div>
+        <div class="pwrap"><div id="pbar"></div></div>
+      </div>
+    </div>
+    <div class="subpanels">
+      <div class="blk tile" id="tile-cam">
+        <div class="blk-tag">SENSOR <span class="sub">· D405 WRIST CAM</span></div>
+        <img id="cam-img" alt="wrist camera">
+      </div>
+      <div class="blk tile" id="tile-recon">
+        <div class="blk-tag" id="recon-title">ESTIMATOR <span class="sub">· 3D RECON / SEAM</span></div>
+        <img id="recon-img" alt="reconstruction">
+        <div class="cap" id="recon-cap"></div>
+      </div>
+    </div>
+    <div class="blk card" id="monitor-card">
+      <div class="blk-tag">MONITOR <span class="sub">· 3D SKELETON / JOINTS q1–q6 / TIP ERROR</span></div>
+      <div class="monrow">
+        <canvas id="sk"></canvas>
+        <div class="jgrid">
+          <canvas id="jc0"></canvas><canvas id="jc1"></canvas><canvas id="jc2"></canvas>
+          <canvas id="jc3"></canvas><canvas id="jc4"></canvas><canvas id="jc5"></canvas>
+        </div>
+      </div>
+      <canvas id="ec"></canvas>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="blk card">
+      <div class="blk-tag">CONTROLLER <span class="sub">· ACTIONS</span></div>
+      <div class="actions">
+        <button class="act" id="btn-scan"><div class="t">SCAN</div><div class="d">카메라 궤적 IK · 뎁스 캡처</div></button>
+        <button class="act" id="btn-build"><div class="t">BUILD</div><div class="d">3D 재건 · seam 추출</div></button>
+        <button class="act" id="btn-weld"><div class="t">WELD</div><div class="d">4-segment IK · 용접 실행</div></button>
+        <button class="act" id="btn-replay"><div class="t">REPLAY</div><div class="d">계산된 IK 궤적 재생</div></button>
+        <button class="act" id="btn-home" style="grid-column: 1 / -1"><div class="t">HOME</div><div class="d">준비 자세 복귀</div></button>
+      </div>
+      <div class="seamline" id="seamline" style="display:none"></div>
+    </div>
+
+    <div class="blk card">
+      <div class="blk-tag">PARAMETERS</div>
+      <div class="param">
+        <div class="name">Base ↔ Pipe Distance</div>
+        <div class="slider-row">
+          <button class="stepbtn" data-step="-0.5">−</button>
+          <input type="range" id="pipedist" min="300" max="900" step="0.5" value="650">
+          <button class="stepbtn" data-step="0.5">+</button>
+          <div class="val" id="pipedist-val">650.0 mm</div>
+        </div>
+        <div class="sub">로봇 베이스 ↔ 파이프/플랜지 거리 · 즉시 반영, WELD/SCAN은 재계산 필요</div>
+      </div>
+      <div class="param">
+        <div class="name">Playback Speed</div>
+        <div class="slider-row">
+          <button class="stepbtn" data-sstep="-0.1">−</button>
+          <input type="range" id="speed" min="0.1" max="3.0" step="0.1" value="1.0">
+          <button class="stepbtn" data-sstep="0.1">+</button>
+          <div class="val" id="speed-val">1.0×</div>
+        </div>
+        <div class="sub">애니메이션 재생 배속 · 실시간 반영</div>
+      </div>
+    </div>
+
+    <div class="blk card">
+      <div class="blk-tag">FEEDBACK <span class="sub">· WELD MONITOR</span></div>
+      <div class="pills" id="pills"></div>
+      <div class="tip">
+        <div class="tipbox" id="box-mean"><div class="k">TIP ERROR · MEAN</div><div class="v" id="err-mean">—</div><div class="st" id="st-mean"></div></div>
+        <div class="tipbox" id="box-max"><div class="k">TIP ERROR · MAX</div><div class="v" id="err-max">—</div><div class="st" id="st-max"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast">E-STOP — 애니메이션 중단됨</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let S = null;                 // 최신 서버 상태
+let segNames = [];
+let carousel = null, carouselIdx = 0, prevBuilding = false;
+
+async function post(path, body) {
+  try { await fetch(path, { method: "POST", body: JSON.stringify(body) }); }
+  catch (e) { /* 서버 재시작 등 — 폴링이 복구 */ }
+}
+
+/* ── 액션 버튼 ── */
+$("btn-scan").onclick  = () => post("/action", { action: "scan" });
+$("btn-build").onclick = () => post("/action", { action: "build" });
+$("btn-weld").onclick   = () => post("/action", { action: "weld" });
+$("btn-replay").onclick = () => post("/action", { action: "replay" });
+$("btn-home").onclick   = () => post("/action", { action: "home" });
+
+/* ── E-STOP: 0.5초 long-press ── */
+let holdTimer = null;
+const estop = $("estop");
+function armHold() {
+  estop.classList.add("holding");
+  holdTimer = setTimeout(() => {
+    post("/action", { action: "estop" });
+    const t = $("toast"); t.classList.add("show");
+    setTimeout(() => t.classList.remove("show"), 2200);
+    disarmHold();
+  }, 500);
+}
+function disarmHold() {
+  estop.classList.remove("holding");
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+}
+estop.addEventListener("pointerdown", armHold);
+estop.addEventListener("pointerup", disarmHold);
+estop.addEventListener("pointerleave", disarmHold);
+
+/* ── 슬라이더 ── */
+function sendPipeDist(v) {
+  v = Math.round(v * 2) / 2;   // 0.5mm 단위
+  $("pipedist").value = v;
+  $("pipedist-val").textContent = `${v.toFixed(1)} mm`;
+  post("/params", { pipe_dist_mm: v });
+}
+function sendSpeed(v) {
+  v = Math.round(v * 10) / 10;
+  $("speed").value = v;
+  $("speed-val").textContent = `${v.toFixed(1)}×`;
+  post("/params", { speed: v });
+}
+$("pipedist").oninput = e => sendPipeDist(Number(e.target.value));
+$("speed").oninput    = e => sendSpeed(Number(e.target.value));
+document.querySelectorAll("[data-step]").forEach(b =>
+  b.onclick = () => sendPipeDist(Math.min(900, Math.max(300, Number($("pipedist").value) + Number(b.dataset.step)))));
+document.querySelectorAll("[data-sstep]").forEach(b =>
+  b.onclick = () => sendSpeed(Math.min(3, Math.max(0.1, Number($("speed").value) + Number(b.dataset.sstep)))));
+
+/* ── 상태 폴링 (200ms) ── */
+function errLevel(v) { return v == null ? "" : v > 1.0 ? "bad" : v > 0.2 ? "warn" : "ok"; }
+
+function render() {
+  if (!S) return;
+  const pd = S.phase_done, busy = S.busy, act = S.action;
+
+  // Phase 블록 다이어그램
+  document.querySelectorAll(".phase").forEach(el => {
+    const p = el.dataset.p;
+    const isNext = !busy && !pd[p] &&
+      ((p === "scan") || (p === "build" && pd.scan) || (p === "weld" && pd.build)) &&
+      Object.entries(pd).findIndex(([k, v]) => !v) === ["scan","build","weld"].indexOf(p);
+    el.classList.toggle("done", pd[p]);
+    el.classList.toggle("active", act === p || isNext);
+    el.classList.toggle("pending", !pd[p] && act !== p && !isNext);
+  });
+  document.querySelectorAll(".flow").forEach(el =>
+    el.classList.toggle("live", pd[el.dataset.b]));   // 완료된 단계의 출력 신호선 = blue
+
+  // Buttons
+  $("btn-scan").disabled   = busy;
+  $("btn-build").disabled  = busy || !pd.scan;
+  $("btn-weld").disabled   = busy || !pd.build;
+  $("btn-replay").disabled = busy || !S.replay_ready;
+  $("btn-home").disabled   = busy;
+  $("btn-scan").classList.toggle("primary", !busy && !pd.scan);
+  $("btn-build").classList.toggle("primary", !busy && pd.scan && !pd.build);
+  $("btn-weld").classList.toggle("primary", !busy && pd.build && !pd.weld);
+  $("btn-replay").classList.toggle("primary", !busy && S.replay_ready && pd.weld);
+
+  // Status + progress
+  $("status").textContent = S.status;
+  $("statusstrip").classList.toggle("running", busy);
+  const pr = S.progress || { i: 0, n: 0 };
+  $("pbar").style.width = pr.n > 0 ? `${(100 * pr.i / pr.n).toFixed(1)}%` : "0%";
+
+  // Segments
+  if (segNames.length === 0 && S.segment_names) {
+    segNames = S.segment_names;
+    $("pills").innerHTML = segNames.map((n, i) => `<div class="pill pending" data-i="${i}">${n}</div>`).join("");
+  }
+  document.querySelectorAll(".pill").forEach(el => {
+    const i = Number(el.dataset.i);
+    const active = act === "weld" && S.segment === i;
+    const done = (act === "weld" && S.segment > i) || (pd.weld && !busy);
+    el.classList.toggle("active", active);
+    el.classList.toggle("done", done);
+    el.classList.toggle("pending", !active && !done);
+  });
+
+  // Tip error — 상태는 색이 아닌 텍스트+블록 반전으로 표기
+  const m = S.tip_err?.mean, x = S.tip_err?.max;
+  $("err-mean").textContent = m == null ? "—" : `${m.toFixed(2)}mm`;
+  $("err-max").textContent  = x == null ? "—" : `${x.toFixed(2)}mm`;
+  [["mean", m], ["max", x]].forEach(([k, v]) => {
+    const lv = errLevel(v);
+    $(`box-${k}`).className = "tipbox" + (lv === "warn" ? " warn" : lv === "bad" ? " bad" : "");
+    $(`st-${k}`).textContent = lv === "bad" ? "OVER LIMIT" : lv === "warn" ? "▲ WARN" : lv === "ok" ? "OK" : "";
+  });
+
+  // Seam
+  if (S.seam) {
+    $("seamline").style.display = "";
+    $("seamline").innerHTML = `SEAM: <b>r = ${S.seam.radius_mm} mm</b> · center (${S.seam.center.join(", ")})`;
+  }
+
+  // ── 서브 패널: 손목 카메라 (SCAN 중) ──
+  const camOn = act === "scan";
+  $("tile-cam").classList.toggle("show", camOn);
+  if (camOn && !$("cam-img").src.includes("/camstream")) $("cam-img").src = "/camstream";
+  if (!camOn && $("cam-img").src) $("cam-img").removeAttribute("src");   // 스트림 연결 해제
+
+  // ── 서브 패널: 3D 재건 / seam ──
+  const building = act === "build";
+  const reconOn = building || S.recon_ready;
+  $("tile-recon").classList.toggle("show", reconOn);
+  if (building && S.n_depth > 0) {
+    $("recon-title").innerHTML = 'ESTIMATOR <span class="sub">· INPUT DEPTH FRAMES</span>';
+    $("recon-cap").textContent = "캡처된 뎁스 프레임으로 포인트 클라우드 재건 중…";
+    if (!carousel) carousel = setInterval(() => {
+      carouselIdx = (carouselIdx + 3) % S.n_depth;
+      $("recon-img").src = `/depthframe/${carouselIdx}`;
+    }, 220);
+  } else {
+    if (carousel) { clearInterval(carousel); carousel = null; }
+    if (reconOn) {
+      $("recon-title").innerHTML = 'ESTIMATOR <span class="sub">· 3D RECON / SEAM</span>';
+      $("recon-cap").textContent = S.seam
+        ? `추출된 seam 원 (blue) · r = ${S.seam.radius_mm} mm`
+        : "복원된 포인트 클라우드와 추출된 seam";
+      if (prevBuilding || !$("recon-img").src.includes("/recon.png"))
+        $("recon-img").src = `/recon.png?t=${prevBuilding ? Date.now() : 0}`;
+    }
+  }
+  prevBuilding = building;
+
+  // 파라미터 동기화 (다른 클라이언트/서버 기본값)
+  if (!document.activeElement || !["pipedist", "speed"].includes(document.activeElement.id)) {
+    $("pipedist").value = S.params.pipe_dist_mm;
+    $("pipedist-val").textContent = `${Number(S.params.pipe_dist_mm).toFixed(1)} mm`;
+    $("speed").value = S.params.speed;
+    $("speed-val").textContent = `${Number(S.params.speed).toFixed(1)}×`;
+  }
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/state");
+    S = await r.json();
+    render();
+  } catch (e) {
+    $("status").textContent = "서버 연결 대기 중…";
+    $("statusstrip").classList.remove("running");
+  }
+  setTimeout(poll, 200);
+}
+poll();
+
+/* ── MONITOR: 관절/오차 실시간 플롯 (최근 30초 창) ── */
+const WINDOW_S = 30;
+const INK = "#3A3A3A", BLUE = "#3182F7";
+
+function prepCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== w * dpr) { cv.width = w * dpr; cv.height = h * dpr; }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  return [g, w, h];
+}
+
+function drawSeries(g, w, h, ts, ys, tMax, yLo, yHi, color) {
+  g.strokeStyle = color; g.lineWidth = 1.5; g.lineJoin = "round";
+  g.beginPath();
+  let started = false;
+  for (let k = 0; k < ts.length; k++) {
+    if (ys[k] == null) { started = false; continue; }
+    const x = w - ((tMax - ts[k]) / WINDOW_S) * w;
+    const y = h - 4 - ((ys[k] - yLo) / (yHi - yLo)) * (h - 18);
+    if (x < -2) continue;
+    if (!started) { g.moveTo(x, y); started = true; } else { g.lineTo(x, y); }
+  }
+  g.stroke();
+}
+
+function drawLabel(g, text, x, y, color, align = "left") {
+  g.fillStyle = color;
+  g.font = "700 10px 'Helvetica Neue', Arial, sans-serif";
+  g.textAlign = align;
+  g.fillText(text, x, y);
+}
+
+function drawMonitor(samples) {
+  if (!samples.length) return;
+  const tMax = samples[samples.length - 1][0];
+  const vis = samples.filter(s => s[0] >= tMax - WINDOW_S);
+  const ts = vis.map(s => s[0]);
+
+  for (let j = 0; j < 6; j++) {
+    const cv = $("jc" + j);
+    const [g, w, h] = prepCanvas(cv);
+    const ys = vis.map(s => s[1][j]);
+    let lo = Math.min(...ys), hi = Math.max(...ys);
+    const pad = Math.max((hi - lo) * 0.15, 0.05);
+    lo -= pad; hi += pad;
+    g.strokeStyle = INK; g.globalAlpha = 0.18; g.lineWidth = 1;      // 0 rad 기준선
+    if (lo < 0 && hi > 0) {
+      const y0 = h - 4 - ((0 - lo) / (hi - lo)) * (h - 18);
+      g.beginPath(); g.moveTo(0, y0); g.lineTo(w, y0); g.stroke();
+    }
+    g.globalAlpha = 1;
+    drawSeries(g, w, h, ts, ys, tMax, lo, hi, INK);
+    drawLabel(g, "q" + (j + 1), 5, 12, INK);
+    drawLabel(g, ys[ys.length - 1].toFixed(2) + " rad", w - 5, 12, BLUE, "right");
+  }
+
+  const [g, w, h] = prepCanvas($("ec"));
+  const es = vis.map(s => s[2]);
+  const finite = es.filter(v => v != null);
+  if (!finite.length) {
+    drawLabel(g, "TIP ERROR (mm)", 5, 12, INK);
+    g.globalAlpha = 0.45;
+    drawLabel(g, "WELD / REPLAY 재생 중에만 기록됩니다", w / 2, h / 2 + 4, INK, "center");
+    g.globalAlpha = 1;
+    return;
+  }
+  // 패스 경계 재구성 스파이크(수백 mm)가 sub-mm 디테일을 누르지 않게 5mm로 캡
+  const hi = Math.min(Math.max(1.2, ...finite) * 1.1, 5);
+  const yTh = h - 4 - ((1.0 - 0) / hi) * (h - 18);                    // 1.0mm 한계선
+  g.strokeStyle = INK; g.globalAlpha = 0.35; g.setLineDash([4, 4]); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, yTh); g.lineTo(w, yTh); g.stroke();
+  g.setLineDash([]); g.globalAlpha = 1;
+  drawSeries(g, w, h, ts, es, tMax, 0, hi, BLUE);
+  drawLabel(g, "TIP ERROR (mm)", 5, 12, INK);
+  drawLabel(g, "limit 1.0", w - 5, yTh - 4, INK, "right");
+  const last = finite.length ? finite[finite.length - 1] : null;
+  if (last != null) drawLabel(g, last.toFixed(2) + " mm", w - 5, 12, BLUE, "right");
+}
+
+/* ── 3D SKELETON: 고정 3/4 뷰 정사영 ── */
+function skProj(p) {
+  const u = 0.94 * p[0] - 0.34 * p[1];
+  const v = p[2] - 0.37 * (0.34 * p[0] + 0.94 * p[1]);
+  return [u, v];
+}
+
+function drawSkeleton(skel, pipeX) {
+  const cv = $("sk");
+  const [g, w, h] = prepCanvas(cv);
+  drawLabel(g, "3D SKELETON", 5, 12, INK);
+  if (!skel || skel.length < 3) return;
+
+  // 고정 world 창 → 캔버스 매핑 (뷰가 흔들리지 않게 고정 범위 사용)
+  const U0 = -0.20, U1 = 1.05, V0 = -0.30, V1 = 1.05;
+  const s = Math.min(w / (U1 - U0), h / (V1 - V0));
+  const ox = (w - s * (U1 - U0)) / 2, oy = (h - s * (V1 - V0)) / 2;
+  const P = p => {
+    const [u, v] = skProj(p);
+    return [ox + (u - U0) * s, h - oy - (v - V0) * s];
+  };
+
+  // 바닥선 + 파이프(문맥용)
+  g.strokeStyle = INK; g.globalAlpha = 0.18; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(...P([-0.15, 0, 0])); g.lineTo(...P([1.0, 0, 0])); g.stroke();
+  g.globalAlpha = 0.35; g.lineWidth = 5; g.lineCap = "round";
+  g.beginPath(); g.moveTo(...P([pipeX - 0.126, 0, 0.57])); g.lineTo(...P([pipeX + 0.152, 0, 0.57])); g.stroke();
+  g.globalAlpha = 1;
+
+  // seam 마커 (파이프-플랜지 접합부)
+  const sm = P([pipeX + 0.125, 0, 0.57]);
+  g.strokeStyle = BLUE; g.lineWidth = 1.5;
+  g.beginPath(); g.arc(sm[0], sm[1], 6, 0, 2 * Math.PI); g.stroke();
+
+  // 링크 체인
+  g.strokeStyle = INK; g.lineWidth = 2; g.lineJoin = "round"; g.lineCap = "round";
+  g.beginPath();
+  skel.forEach((p, i) => { const q = P(p); i ? g.lineTo(...q) : g.moveTo(...q); });
+  g.stroke();
+
+  // 관절 점 + 토치 끝
+  g.fillStyle = BLUE;
+  for (let i = 0; i < skel.length - 1; i++) {
+    const q = P(skel[i]);
+    g.beginPath(); g.arc(q[0], q[1], 3, 0, 2 * Math.PI); g.fill();
+  }
+  const tip = P(skel[skel.length - 1]);
+  g.beginPath(); g.arc(tip[0], tip[1], 4.5, 0, 2 * Math.PI); g.fill();
+}
+
+async function pollTelemetry() {
+  try {
+    const r = await fetch("/telemetry");
+    const d = await r.json();
+    drawMonitor(d.samples || []);
+    drawSkeleton(d.skel, d.pipe_x || 0.65);
+  } catch (e) { /* 폴링이 복구 */ }
+  setTimeout(pollTelemetry, 300);
+}
+pollTelemetry();
+</script>
+</body>
+</html>
