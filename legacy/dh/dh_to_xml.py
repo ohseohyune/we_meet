@@ -10,7 +10,7 @@ Use:
 
 Robot/scene source:
   scene.xml
-  control/franka_ik_solver.py
+  control/ik_solver.py
 """
 
 

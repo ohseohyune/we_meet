@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from control.franka_ik_solver import joint_limits, joint_qpos_indices, set_arm_qpos, solve_trajectory
+from control.ik_solver import joint_limits, joint_qpos_indices, set_arm_qpos, solve_trajectory
 from main import (
     EE_LOOK_AXIS_COL,
     EE_LOOK_AXIS_SIGN,

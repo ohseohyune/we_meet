@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import mujoco
 
-from control.franka_ik_solver import joint_limits
+from control.ik_solver import joint_limits
 from mujoco_viewer import DEFAULT_IK_RETRIES, SCENE_XML, compute_ik_trajectory
 
 

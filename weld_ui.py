@@ -37,7 +37,7 @@ import mujoco
 import collections
 
 import mujoco_viewer as mv
-from control.franka_ik_solver import joint_qpos_indices, set_arm_qpos
+from control.ik_solver import joint_qpos_indices, set_arm_qpos
 
 HTML_PATH   = os.path.join(ROOT, "weld_ui.html")
 PLY_PATH    = os.path.join(ROOT, "inspection_frames", "output", "reconstructed_pointcloud.ply")

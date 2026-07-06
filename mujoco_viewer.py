@@ -58,7 +58,7 @@ from trajectory.circle import (
     multi_ring_segmented_trajectory,
     segmented_circle_trajectory,
 )
-from control.franka_ik_solver import (
+from control.ik_solver import (
     evaluate_look_at_trajectory,
     evaluate_collision_trajectory,
     joint_motion_metrics,
@@ -668,7 +668,7 @@ def compute_ik_weld_trajectory(
 
     _tcp_sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, "tcp")
     _ee_bid  = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "ee")
-    from control.franka_ik_solver import joint_limits, ARM_JOINT_NAMES
+    from control.ik_solver import joint_limits, ARM_JOINT_NAMES
     _jlimits = joint_limits(model, mujoco)
     _jnt_ids = [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, nm) for nm in ARM_JOINT_NAMES]
     _dof_idx = np.array([model.jnt_dofadr[i] for i in _jnt_ids], dtype=int)

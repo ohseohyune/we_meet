@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from control.franka_ik_solver import evaluate_look_at_trajectory, set_arm_qpos, site_pose, solve_trajectory
+from control.ik_solver import evaluate_look_at_trajectory, set_arm_qpos, site_pose, solve_trajectory
 from mujoco_viewer import (
     CAPTURE_MAX_LOOK_DEG,
     CAPTURE_MAX_POS_ERR,

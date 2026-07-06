@@ -93,7 +93,10 @@ we_meet/
 ├── robot_model.xml              # 6-DOF DH 로봇 단독 모델
 ├── requirements.txt
 ├── control/
-│   ├── franka_ik_solver.py      # MuJoCo Jacobian IK
+│   ├── ik_solver.py            # IK 공개 API (아래 모듈 재수출)
+│   ├── arm_model.py            # 관절/사이트 유틸, 충돌 검사
+│   ├── look_at_ik.py           # 단일 자세 look-at IK 솔버
+│   ├── trajectory_ik.py        # 궤적 IK (DP 경로 최적화), 모션 메트릭/리타이밍
 │   └── clik.py
 ├── trajectory/
 │   └── generator.py            # 플랜지 검사 궤적 생성

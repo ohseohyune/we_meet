@@ -22,7 +22,7 @@ from control.jacobian import body_jacobian
 from model.franka import B_LIST, HOME_Q, M, Q_MAX, Q_MIN
 from robot.kinematics import body_poe_fk
 from trajectory.circle import segmented_circle_trajectory
-from control.franka_ik_solver import (
+from control.ik_solver import (
     retime_joint_trajectory,
     set_arm_qpos,
     site_pose,

@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import mujoco
 
-from control.franka_ik_solver import set_arm_qpos, site_pose
+from control.ik_solver import set_arm_qpos, site_pose
 from mujoco_viewer import (
     CAMERA_SITE_NAME,
     DEFAULT_IK_RETRIES,
